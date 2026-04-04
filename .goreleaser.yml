@@ -1,0 +1,47 @@
+version: 2
+project_name: dpeek
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/dpeek
+    binary: dpeek
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+brews:
+  - repository:
+      owner: GonzaloFuentes28
+      name: homebrew-tap
+    directory: Formula
+    homepage: "https://github.com/GonzaloFuentes28/dpeek"
+    description: "Interactive terminal data viewer for CSV, TSV, JSON, and JSONL files"
+    license: "MIT"
+    install: |
+      bin.install "dpeek"
+    test: |
+      assert_match "dpeek", shell_output("#{bin}/dpeek --version")
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

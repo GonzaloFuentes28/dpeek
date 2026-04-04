@@ -1,0 +1,36 @@
+{
+  "company": "Acme Corp",
+  "founded": 2015,
+  "active": true,
+  "address": {
+    "street": "Calle Mayor 42",
+    "city": "Madrid",
+    "country": "Spain",
+    "coordinates": {
+      "lat": 40.4168,
+      "lng": -3.7038
+    }
+  },
+  "employees": [
+    {
+      "name": "Alice",
+      "role": "Engineering Lead",
+      "skills": ["Go", "Python", "Rust"],
+      "active": true
+    },
+    {
+      "name": "Bob",
+      "role": "Designer",
+      "skills": ["Figma", "CSS"],
+      "active": false
+    },
+    {
+      "name": "Carol",
+      "role": "PM",
+      "skills": ["Jira", "SQL"],
+      "active": true
+    }
+  ],
+  "tags": ["tech", "startup", "remote"],
+  "metadata": null
+}

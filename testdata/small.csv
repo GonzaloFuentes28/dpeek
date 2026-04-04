@@ -1,0 +1,21 @@
+name,age,city,salary,active
+Alicia,32,Madrid,45000,true
+Bob,28,Barcelona,52000,false
+Carol,45,Valencia,61000,true
+David,35,Sevilla,48000,true
+Eva,29,Bilbao,55000,false
+Frank,41,Málaga,58000,true
+Grace,33,Zaragoza,47000,true
+Héctor,27,Murcia,43000,false
+Irene,38,Palma,51000,true
+Juan,44,Las Palmas,63000,true
+Karen,31,Alicante,49000,false
+Luis,36,Córdoba,54000,true
+María,42,Valladolid,59000,true
+Nora,26,Vigo,41000,false
+Óscar,39,Gijón,56000,true
+Paula,34,Granada,50000,true
+Quique,30,Donostia,46000,false
+Rosa,47,Santander,64000,true
+Sergio,37,Oviedo,53000,true
+Teresa,43,Pamplona,62000,true
