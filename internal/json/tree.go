@@ -204,8 +204,12 @@ func SaveJSONL(root *Node, path string) error {
 		if err != nil {
 			return fmt.Errorf("serialize line: %w", err)
 		}
-		w.Write(line)
-		w.WriteByte('\n')
+		if _, err := w.Write(line); err != nil {
+			return fmt.Errorf("write line: %w", err)
+		}
+		if err := w.WriteByte('\n'); err != nil {
+			return fmt.Errorf("write newline: %w", err)
+		}
 	}
 
 	if err := w.Flush(); err != nil {
