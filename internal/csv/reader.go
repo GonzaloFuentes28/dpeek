@@ -126,10 +126,8 @@ func LoadChunk(path string, delimiter rune, hasHeader bool, chunkSize int) (*Dat
 		return nil, nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 
-	startIndex := 1 // next OrigIndex (1-based)
 	if hasHeader {
 		ds.Headers = firstRecord
-		startIndex = 2
 	} else {
 		colCount := len(firstRecord)
 		ds.Headers = make([]string, colCount)
@@ -140,7 +138,6 @@ func LoadChunk(path string, delimiter rune, hasHeader bool, chunkSize int) (*Dat
 		padded := normalizeRow(firstRecord, len(ds.Headers))
 		ds.Rows = append(ds.Rows, padded)
 		ds.OrigIndex = append(ds.OrigIndex, 1)
-		startIndex = 2
 	}
 
 	// Read first chunk
@@ -155,7 +152,7 @@ func LoadChunk(path string, delimiter rune, hasHeader bool, chunkSize int) (*Dat
 		}
 		padded := normalizeRow(record, len(ds.Headers))
 		ds.Rows = append(ds.Rows, padded)
-		ds.OrigIndex = append(ds.OrigIndex, startIndex+len(ds.Rows)-1)
+		ds.OrigIndex = append(ds.OrigIndex, 0) // placeholder, fixed below
 	}
 
 	// Fix OrigIndex values
