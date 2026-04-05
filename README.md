@@ -86,6 +86,8 @@ dpeek logs.jsonl            # Open a JSONL file
 dpeek data.txt --delimiter ";"  # Custom delimiter
 dpeek data.csv --no-header      # First row as data, not header
 dpeek --version                 # Show version
+cat data.csv | dpeek        # Read from stdin
+curl -s url | dpeek         # Pipe from any command
 ```
 
 ## Keyboard shortcuts
@@ -118,6 +120,7 @@ dpeek --version                 # Show version
 | `F1` | Toggle help overlay |
 | `F2` / `Ctrl+S` | Save file |
 | `F3` / `/` | Search (prefix `/` for regex, e.g. `/^foo`) |
+| `Ctrl+H` | Search & replace (uses current search query) |
 | `F4` | Filter rows (`col:value` for column filter) |
 | `F5` | Sort by current column (CSV only) |
 | `F6` | Column statistics (CSV only) |

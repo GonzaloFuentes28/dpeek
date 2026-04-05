@@ -62,10 +62,12 @@ type CSVModel struct {
 	activeOverlay overlay
 
 	// Features
-	search SearchState
-	filter FilterState
-	sort   SortState
-	undo   UndoStack[CellEdit]
+	search       SearchState
+	filter       FilterState
+	sort         SortState
+	undo         UndoStack[CellEdit]
+	replaceActive bool
+	replaceInput  textinput.Model
 
 	// Progressive loading
 	loading     bool
@@ -96,13 +98,18 @@ func NewCSVModel(data *csvpkg.DataSet) CSVModel {
 	gi.Placeholder = "Row, col name, or row:col..."
 	gi.CharLimit = 64
 
+	ri := textinput.New()
+	ri.Placeholder = "Replace with..."
+	ri.CharLimit = 256
+
 	m := CSVModel{
-		data:      data,
-		editInput: ti,
-		gotoInput: gi,
-		search:    NewSearchState(),
-		filter:    NewFilterState(),
-		undo:      NewUndoStack[CellEdit](1000),
+		data:         data,
+		editInput:    ti,
+		gotoInput:    gi,
+		replaceInput: ri,
+		search:       NewSearchState(),
+		filter:       NewFilterState(),
+		undo:         NewUndoStack[CellEdit](1000),
 	}
 	m.computeColWidths()
 	return m
@@ -117,15 +124,20 @@ func NewCSVModelChunked(data *csvpkg.DataSet, cr *csvpkg.ChunkReader) CSVModel {
 	gi.Placeholder = "Row, col name, or row:col..."
 	gi.CharLimit = 64
 
+	ri := textinput.New()
+	ri.Placeholder = "Replace with..."
+	ri.CharLimit = 256
+
 	m := CSVModel{
-		data:        data,
-		editInput:   ti,
-		gotoInput:   gi,
-		search:      NewSearchState(),
-		filter:      NewFilterState(),
-		undo:        NewUndoStack[CellEdit](1000),
-		loading:     true,
-		chunkReader: cr,
+		data:         data,
+		editInput:    ti,
+		gotoInput:    gi,
+		replaceInput: ri,
+		search:       NewSearchState(),
+		filter:       NewFilterState(),
+		undo:         NewUndoStack[CellEdit](1000),
+		loading:      true,
+		chunkReader:  cr,
 	}
 	m.computeColWidthsSampled(csvpkg.ColWidthSampleSize)
 	return m
@@ -239,6 +251,9 @@ func (m CSVModel) Update(msg tea.Msg) (CSVModel, tea.Cmd) {
 	if m.search.Active {
 		return m.updateSearch(msg)
 	}
+	if m.replaceActive {
+		return m.updateReplace(msg)
+	}
 	if m.filter.Active {
 		return m.updateFilter(msg)
 	}
@@ -273,6 +288,21 @@ func (m CSVModel) Update(msg tea.Msg) (CSVModel, tea.Cmd) {
 					m.cursorRow = m.rowCount() - 1
 				}
 				m.ensureRowVisible()
+			}
+		case tea.MouseButtonWheelLeft:
+			if m.scrollCol > 0 {
+				m.scrollCol--
+				m.ensureColVisible()
+			}
+		case tea.MouseButtonWheelRight:
+			colStart, colEnd := m.visibleColRange()
+			_ = colStart
+			if colEnd < m.data.ColCount() {
+				m.scrollCol++
+			}
+		case tea.MouseButtonLeft:
+			if msg.Action == tea.MouseActionPress {
+				m.handleMouseClick(msg.X, msg.Y)
 			}
 		}
 
@@ -400,6 +430,18 @@ func (m CSVModel) Update(msg tea.Msg) (CSVModel, tea.Cmd) {
 
 		case "f3", "/":
 			m.search.Open()
+
+		case "ctrl+h":
+			// Search & Replace: first do a search, then prompt for replacement
+			if m.search.Query == "" {
+				// No active search — open search first, replace will follow
+				m.search.Open()
+			} else {
+				// Already have a search — go straight to replace prompt
+				m.replaceActive = true
+				m.replaceInput.SetValue("")
+				m.replaceInput.Focus()
+			}
 
 		case "ctrl+g":
 			m.gotoActive = true
@@ -658,6 +700,57 @@ func (m CSVModel) updateFilter(msg tea.Msg) (CSVModel, tea.Cmd) {
 	return m, cmd
 }
 
+func (m CSVModel) updateReplace(msg tea.Msg) (CSVModel, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			m.replaceActive = false
+			m.replaceInput.Blur()
+			return m, nil
+		case "enter":
+			m.replaceActive = false
+			m.replaceInput.Blur()
+			replacement := m.replaceInput.Value()
+			if len(m.search.Matches) == 0 {
+				m.statusMsg = "No matches to replace"
+				return m, nil
+			}
+			count := 0
+			for _, match := range m.search.Matches {
+				if match.Row < 0 {
+					continue // skip header matches
+				}
+				oldValue := m.data.Rows[match.Row][match.Col]
+				var newValue string
+				if m.search.IsRegex && m.search.Regex() != nil {
+					newValue = m.search.Regex().ReplaceAllString(oldValue, replacement)
+				} else {
+					newValue = strings.ReplaceAll(oldValue, m.search.Query, replacement)
+				}
+				if newValue != oldValue {
+					m.undo.Push(CellEdit{
+						OrigLine: m.data.OrigIndex[match.Row],
+						Col:      match.Col,
+						OldValue: oldValue,
+						NewValue: newValue,
+					})
+					m.data.Rows[match.Row][match.Col] = newValue
+					count++
+				}
+			}
+			// Re-run search to clear stale matches
+			m.search.Execute(m.data)
+			m.statusMsg = fmt.Sprintf("Replaced %d cells", count)
+			return m, nil
+		}
+	}
+
+	var cmd tea.Cmd
+	m.replaceInput, cmd = m.replaceInput.Update(msg)
+	return m, cmd
+}
+
 func (m CSVModel) updateGoto(msg tea.Msg) (CSVModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -737,6 +830,35 @@ func (m *CSVModel) ensureRowVisible() {
 	if m.cursorRow >= m.scrollRow+m.viewRows {
 		m.scrollRow = m.cursorRow - m.viewRows + 1
 	}
+}
+
+func (m *CSVModel) handleMouseClick(x, y int) {
+	// Layout: line 0=title, 1=header, 2=separator, 3+=data rows
+	dataStartY := 3
+	clickedRow := y - dataStartY + m.scrollRow
+	if clickedRow < 0 || clickedRow >= m.rowCount() {
+		return
+	}
+
+	// Determine which column was clicked
+	colStart, colEnd := m.visibleColRange()
+	xPos := rowNumWidth + 1 // skip row number column + separator
+	clickedCol := -1
+	for col := colStart; col < colEnd; col++ {
+		nextPos := xPos + m.colWidths[col] + 1 // +1 for separator
+		if x >= xPos && x < nextPos {
+			clickedCol = col
+			break
+		}
+		xPos = nextPos
+	}
+	if clickedCol < 0 {
+		return
+	}
+
+	m.cursorRow = clickedRow
+	m.cursorCol = clickedCol
+	m.ensureRowVisible()
 }
 
 func (m *CSVModel) ensureColVisible() {
@@ -862,6 +984,9 @@ func (m CSVModel) buildStatusItems() []string {
 	if m.filter.Active {
 		items = append(items, "FILTER: "+m.filter.Input.View())
 	}
+	if m.replaceActive {
+		items = append(items, fmt.Sprintf("REPLACE (%d matches): %s", m.search.MatchCount(), m.replaceInput.View()))
+	}
 	if m.gotoActive {
 		items = append(items, "GO TO: "+m.gotoInput.View())
 	}
@@ -890,6 +1015,8 @@ func (m CSVModel) fkeys() []style.FKeyItem {
 	fkeys = append(fkeys,
 		style.FKeyItem{Key: "F5", Desc: "Sort"},
 		style.FKeyItem{Key: "F6", Desc: "Stats"},
+		style.FKeyItem{Key: "^H", Desc: "Replace"},
+		style.FKeyItem{Key: "^G", Desc: "GoTo"},
 		style.FKeyItem{Key: "F10", Desc: "Quit"},
 	)
 	return fkeys
@@ -976,7 +1103,7 @@ func (m CSVModel) renderSeparator(colStart, colEnd int) string {
 
 // HasActiveInput returns true if an input field or overlay is active.
 func (m CSVModel) HasActiveInput() bool {
-	return m.editing || m.search.Active || m.filter.Active || m.gotoActive || m.activeOverlay != overlayNone
+	return m.editing || m.search.Active || m.replaceActive || m.filter.Active || m.gotoActive || m.activeOverlay != overlayNone
 }
 
 // HasDismissableState returns true if Esc has something to close/clear.

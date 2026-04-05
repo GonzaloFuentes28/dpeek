@@ -4,6 +4,8 @@ dpeek \- interactive terminal data viewer for CSV, TSV, JSON, and JSONL files
 .SH SYNOPSIS
 .B dpeek
 [\fIflags\fR] \fIfile\fR
+.br
+\fIcommand\fR | \fBdpeek\fR
 .SH DESCRIPTION
 .B dpeek
 is a TUI (terminal user interface) tool for interactively viewing and editing
@@ -54,6 +56,9 @@ Save file.
 .TP
 .B F3, /
 Search. Prefix with \fB/\fR for regex (e.g. \fB/^foo\fR).
+.TP
+.B Ctrl+H
+Search and replace. Uses the current search query; prompts for replacement text.
 .TP
 .B F4
 Filter rows. Use \fBcol:value\fR to filter a specific column.
@@ -123,6 +128,9 @@ Open a CSV with a custom delimiter:
 .TP
 Open a CSV without headers:
 .B dpeek \-\-no\-header raw.csv
+.TP
+Read from stdin:
+.B cat data.csv | dpeek
 .SH AUTHOR
 Gonzalo Fuentes
 .SH LICENSE

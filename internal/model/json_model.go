@@ -245,6 +245,15 @@ func (m JSONModel) Update(msg tea.Msg) (JSONModel, tea.Cmd) {
 				}
 				m.ensureVisible()
 			}
+		case tea.MouseButtonLeft:
+			if msg.Action == tea.MouseActionPress {
+				// Layout: line 0=title, 1+=tree rows
+				clickedNode := msg.Y - 1 + m.scrollOff
+				if clickedNode >= 0 && clickedNode < len(m.visible) {
+					m.cursor = clickedNode
+					m.ensureVisible()
+				}
+			}
 		}
 
 	case tea.KeyMsg:
