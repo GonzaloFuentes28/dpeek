@@ -29,6 +29,7 @@ brews:
   - repository:
       owner: GonzaloFuentes28
       name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
     homepage: "https://github.com/GonzaloFuentes28/dpeek"
     description: "Interactive terminal data viewer for CSV, TSV, JSON, and JSONL files"
