@@ -1,0 +1,133 @@
+.TH DPEEK 1 "April 2026" "dpeek" "User Commands"
+.SH NAME
+dpeek \- interactive terminal data viewer for CSV, TSV, JSON, and JSONL files
+.SH SYNOPSIS
+.B dpeek
+[\fIflags\fR] \fIfile\fR
+.SH DESCRIPTION
+.B dpeek
+is a TUI (terminal user interface) tool for interactively viewing and editing
+data files directly in the terminal. It supports CSV, TSV, JSON, and JSONL formats.
+.PP
+CSV and TSV files are displayed as scrollable tables with cell editing, searching,
+filtering, sorting, and column statistics. JSON and JSONL files are displayed as
+collapsible trees with leaf editing and search.
+.SH FLAGS
+.TP
+.B \-\-delimiter \fIchar\fR
+Column delimiter for CSV files. Default: auto\-detected from file extension
+(comma for .csv, tab for .tsv).
+.TP
+.B \-\-no\-header
+Treat the first row as data instead of a column header.
+.TP
+.B \-\-version
+Show version and exit.
+.SH KEYBOARD SHORTCUTS
+.SS Navigation
+.TP
+.B \(ua/\(da/\(la/\(ra, h/j/k/l
+Navigate cells or nodes.
+.TP
+.B PgUp/PgDn
+Scroll one page up or down.
+.TP
+.B Home/End
+Jump to first or last cell/node.
+.SS Editing
+.TP
+.B Enter
+Edit selected cell (CSV) or toggle/edit node (JSON).
+.TP
+.B Tab
+Confirm edit and move to next cell/leaf.
+.TP
+.B Esc
+Cancel edit, close overlay, clear search/filter, or quit.
+.SS Features
+.TP
+.B F1
+Toggle help overlay.
+.TP
+.B F2, Ctrl+S
+Save file.
+.TP
+.B F3, /
+Search. Prefix with \fB/\fR for regex (e.g. \fB/^foo\fR).
+.TP
+.B F4
+Filter rows. Use \fBcol:value\fR to filter a specific column.
+.TP
+.B F5
+Sort by current column (CSV only).
+.TP
+.B F6
+Column statistics (CSV only).
+.TP
+.B Ctrl+G
+Go to line/node number.
+.TP
+.B n/N
+Next/previous search match.
+.TP
+.B y
+Copy cell value to clipboard.
+.TP
+.B p
+Paste from clipboard.
+.TP
+.B Ctrl+Z
+Undo.
+.TP
+.B Ctrl+Y
+Redo.
+.TP
+.B e
+Expand all nodes (JSON only).
+.TP
+.B c
+Collapse all nodes (JSON only).
+.SS Quitting
+.TP
+.B F10, q, Esc
+Quit. Prompts for confirmation if there are unsaved changes.
+.TP
+.B Ctrl+C
+Force quit without confirmation.
+.SH SUPPORTED FORMATS
+.TP
+.B .csv
+Comma\-separated values.
+.TP
+.B .tsv
+Tab\-separated values.
+.TP
+.B .json
+JSON files displayed as collapsible trees.
+.TP
+.B .jsonl
+JSON Lines, each line parsed as an array element.
+.SH EXAMPLES
+.TP
+Open a CSV file:
+.B dpeek data.csv
+.TP
+Open a TSV file:
+.B dpeek data.tsv
+.TP
+Open a JSON file:
+.B dpeek config.json
+.TP
+Open a CSV with a custom delimiter:
+.B dpeek \-\-delimiter "|" data.txt
+.TP
+Open a CSV without headers:
+.B dpeek \-\-no\-header raw.csv
+.SH AUTHOR
+Gonzalo Fuentes
+.SH LICENSE
+MIT License
+.SH SEE ALSO
+.BR less (1),
+.BR jq (1),
+.BR csvtool (1)

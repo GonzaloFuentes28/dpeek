@@ -76,7 +76,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle quit confirmation
 		if a.quitPending {
 			switch msg.String() {
-			case "q", "f10":
+			case "q", "f10", "esc":
 				return a, tea.Quit
 			default:
 				a.quitPending = false
@@ -95,6 +95,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.isModified() {
 				a.quitPending = true
 				a.setStatus(style.ModifiedStyle.Render("Unsaved changes! Press q again to quit, any other key to cancel"))
+				return a, nil
+			}
+			return a, tea.Quit
+		case "esc":
+			if a.hasDismissableState() {
+				break // let sub-model handle it
+			}
+			if a.isModified() {
+				a.quitPending = true
+				a.setStatus(style.ModifiedStyle.Render("Unsaved changes! Press Esc again to quit, any other key to cancel"))
 				return a, nil
 			}
 			return a, tea.Quit
@@ -132,6 +142,16 @@ func (a *App) setStatus(msg string) {
 	case detect.FormatJSON, detect.FormatJSONL:
 		a.jsonModel.statusMsg = msg
 	}
+}
+
+func (a App) hasDismissableState() bool {
+	switch a.mode {
+	case detect.FormatCSV, detect.FormatTSV:
+		return a.csvModel.HasDismissableState()
+	case detect.FormatJSON, detect.FormatJSONL:
+		return a.jsonModel.HasDismissableState()
+	}
+	return false
 }
 
 func (a App) hasActiveInput() bool {

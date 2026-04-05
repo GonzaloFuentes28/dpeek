@@ -117,6 +117,11 @@ func (m JSONModel) HasActiveInput() bool {
 	return m.editing || m.search.Active || m.gotoActive || m.activeOverlay != overlayNone
 }
 
+// HasDismissableState returns true if Esc has something to close/clear.
+func (m JSONModel) HasDismissableState() bool {
+	return m.HasActiveInput() || m.search.Query != ""
+}
+
 // Init implements tea.Model.
 func (m JSONModel) Init() tea.Cmd {
 	return nil

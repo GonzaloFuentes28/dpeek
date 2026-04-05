@@ -3,7 +3,7 @@
 Interactive terminal data viewer and editor for CSV, TSV, JSON, and JSONL files.
 
 ![Go 1.22+](https://img.shields.io/badge/go-1.22%2B-blue)
-![License: MIT](https://img.shields.io/badge/license-MIT-green)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ## What it does
 
@@ -40,9 +40,22 @@ Interactive terminal data viewer and editor for CSV, TSV, JSON, and JSONL files.
   }
 ```
 
+## Features
+
+- **View** CSV, TSV, JSON, and JSONL files with smooth scrolling
+- **Edit** cells (CSV/TSV) or leaf values (JSON) inline
+- **Search** with substring or regex (`/pattern`)
+- **Filter** rows globally or by column (`col:value`)
+- **Sort** by any column with ascending/descending toggle
+- **Column statistics** — type, nulls, min/max, unique count, mean/median
+- **Undo/Redo** — full edit history with Ctrl+Z / Ctrl+Y
+- **Copy/Paste** — clipboard integration with `y` / `p`
+- **Save** modified files back to disk (F2 / Ctrl+S)
+- **Unsaved changes protection** — quit confirmation when modified
+
 ## Installation
 
-### With Homebrew (macOS/Linux)
+### Homebrew (macOS/Linux)
 
 ```bash
 brew tap GonzaloFuentes28/tap
@@ -59,75 +72,92 @@ make install
 
 Requires Go 1.22+.
 
+### From binary
+
+Download the latest release from the [releases page](https://github.com/GonzaloFuentes28/dpeek/releases) and extract it to your PATH.
+
 ## Usage
 
 ```bash
-# Open a CSV file
-dpeek data.csv
-
-# Open a TSV file
-dpeek data.tsv
-
-# Open a JSON file
-dpeek config.json
-
-# Open a JSONL file
-dpeek logs.jsonl
-
-# Custom delimiter
-dpeek data.txt --delimiter ";"
-
-# CSV without header row
-dpeek data.csv --no-header
+dpeek data.csv              # Open a CSV file
+dpeek data.tsv              # Open a TSV file
+dpeek config.json           # Open a JSON file
+dpeek logs.jsonl            # Open a JSONL file
+dpeek data.txt --delimiter ";"  # Custom delimiter
+dpeek data.csv --no-header      # First row as data, not header
+dpeek --version                 # Show version
 ```
 
 ## Keyboard shortcuts
 
-### CSV/TSV mode
+### Navigation
 
 | Key | Action |
 |-----|--------|
-| `↑↓←→` / `hjkl` | Navigate cells |
-| `PgUp` / `PgDn` | Scroll page |
-| `Home` / `End` | Jump to first/last cell |
-| `Enter` | Edit selected cell |
-| `Tab` | Confirm edit, move to next cell |
-| `Esc` | Cancel edit / clear search/filter |
-| `F1` | Help |
-| `F2` / `Ctrl+S` | Save file |
-| `F3` / `/` | Search all cells |
-| `F4` | Filter rows |
-| `F5` | Sort by current column |
-| `F6` | Column statistics |
-| `n` / `N` | Next/previous search match |
-| `F10` / `q` | Quit |
+| `↑↓←→` / `hjkl` | Navigate cells or nodes |
+| `PgUp` / `PgDn` | Scroll one page up or down |
+| `Home` / `End` | Jump to first or last cell/node |
+| `Ctrl+G` | Go to line/node number |
 
-### JSON mode
+### Editing
 
 | Key | Action |
 |-----|--------|
-| `↑↓` / `jk` | Navigate nodes |
-| `←` / `h` | Collapse or go to parent |
-| `→` / `l` | Expand or go to child |
-| `Enter` / `Space` | Toggle expand/collapse or edit leaf |
-| `Tab` | Confirm edit, jump to next leaf |
-| `e` | Expand all |
-| `c` | Collapse all |
-| `F1` | Help |
+| `Enter` | Edit cell (CSV) or toggle/edit node (JSON) |
+| `Tab` | Confirm edit, move to next cell/leaf |
+| `Esc` | Cancel edit or close overlay |
+| `Ctrl+Z` | Undo |
+| `Ctrl+Y` | Redo |
+| `y` | Copy cell/node value to clipboard |
+| `p` | Paste from clipboard |
+
+### Features
+
+| Key | Action |
+|-----|--------|
+| `F1` | Toggle help overlay |
 | `F2` / `Ctrl+S` | Save file |
-| `F3` / `/` | Search keys and values |
-| `n` / `N` | Next/previous match |
-| `F10` / `q` | Quit |
+| `F3` / `/` | Search (prefix `/` for regex, e.g. `/^foo`) |
+| `F4` | Filter rows (`col:value` for column filter) |
+| `F5` | Sort by current column (CSV only) |
+| `F6` | Column statistics (CSV only) |
+| `n` / `N` | Next / previous search match |
+| `e` | Expand all nodes (JSON only) |
+| `c` | Collapse all nodes (JSON only) |
+
+### Quitting
+
+| Key | Action |
+|-----|--------|
+| `F10` / `q` / `Esc` | Quit (prompts if unsaved changes) |
+| `Ctrl+C` | Force quit without confirmation |
 
 ## Supported formats
 
 | Format | Extensions | Features |
 |--------|-----------|----------|
-| CSV | `.csv` | Full: view, edit, search, filter, sort, stats, save |
-| TSV | `.tsv` | Full: same as CSV with tab delimiter |
-| JSON | `.json` | View, edit leaf values, search, save |
-| JSONL | `.jsonl`, `.ndjson` | View, edit, search (each line as array item) |
+| CSV | `.csv` | View, edit, search, filter, sort, stats, save |
+| TSV | `.tsv` | Same as CSV with tab delimiter |
+| JSON | `.json` | View, edit leaves, search, expand/collapse, save |
+| JSONL | `.jsonl` | Each line as array item, same features as JSON |
+
+## Man page
+
+A man page is included. After installation via Homebrew or `make install-local`:
+
+```bash
+man dpeek
+```
+
+## Building
+
+```bash
+make build      # Build binary
+make test       # Run tests
+make lint       # Run golangci-lint
+make clean      # Remove build artifacts
+```
 
 ## License
 
-MIT
+[MIT](LICENSE) — Gonzalo Fuentes

@@ -824,6 +824,11 @@ func (m CSVModel) HasActiveInput() bool {
 	return m.editing || m.search.Active || m.filter.Active || m.gotoActive || m.activeOverlay != overlayNone
 }
 
+// HasDismissableState returns true if Esc has something to close/clear.
+func (m CSVModel) HasDismissableState() bool {
+	return m.HasActiveInput() || m.search.Query != "" || m.filter.IsFiltered
+}
+
 // Helper functions
 
 func truncate(s string, maxLen int) string {

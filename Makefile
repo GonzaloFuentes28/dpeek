@@ -20,4 +20,10 @@ clean:
 	rm -f coverage.out
 
 install: build
+	mkdir -p $(shell go env GOPATH)/bin
 	mv $(BINARY) $(shell go env GOPATH)/bin/
+
+install-local: build
+	cp $(BINARY) /usr/local/bin/
+	mkdir -p /usr/local/share/man/man1
+	cp dpeek.1 /usr/local/share/man/man1/
