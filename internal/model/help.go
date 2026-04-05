@@ -25,7 +25,7 @@ var helpText = []struct {
 	{"F4", "Filter rows (col:value for column)"},
 	{"F5", "Sort by current column"},
 	{"F6", "Column statistics"},
-	{"Ctrl+G", "Go to line"},
+	{"Ctrl+G", "Go to row / column"},
 	{"F10, q", "Quit"},
 	{"", ""},
 	{"y", "Copy to clipboard"},

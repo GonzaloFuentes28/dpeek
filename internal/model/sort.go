@@ -57,6 +57,14 @@ func (s *SortState) Reset(data *csvpkg.DataSet) {
 	data.OrigIndex = newOrig
 }
 
+// Apply sorts the data using the current sort settings.
+func (s *SortState) Apply(data *csvpkg.DataSet) {
+	if !s.Active {
+		return
+	}
+	s.apply(data)
+}
+
 func (s *SortState) apply(data *csvpkg.DataSet) {
 	col := s.Column
 	asc := s.Ascending

@@ -107,6 +107,77 @@ func (f *FilterState) Clear() {
 	f.Input.SetValue("")
 }
 
+// ApplyChunk incrementally filters newly added rows (for progressive loading).
+func (f *FilterState) ApplyChunk(data *csvpkg.DataSet, startRow int, count int) {
+	if !f.IsFiltered || f.Query == "" {
+		return
+	}
+
+	// Parse filter value
+	filterValue := f.Query
+	if f.Column >= 0 {
+		if idx := strings.IndexByte(f.Query, ':'); idx > 0 {
+			filterValue = f.Query[idx+1:]
+		}
+	}
+	query := strings.ToLower(filterValue)
+
+	endRow := startRow + count
+	if endRow > len(data.Rows) {
+		endRow = len(data.Rows)
+	}
+
+	if f.Column >= 0 {
+		for i := startRow; i < endRow; i++ {
+			row := data.Rows[i]
+			if f.Column < len(row) && strings.Contains(strings.ToLower(row[f.Column]), query) {
+				f.FilteredIdx = append(f.FilteredIdx, i)
+			}
+		}
+	} else {
+		for i := startRow; i < endRow; i++ {
+			for _, cell := range data.Rows[i] {
+				if strings.Contains(strings.ToLower(cell), query) {
+					f.FilteredIdx = append(f.FilteredIdx, i)
+					break
+				}
+			}
+		}
+	}
+}
+
+// Reapply re-runs the filter on the full dataset (e.g., after sort changes row order).
+func (f *FilterState) Reapply(data *csvpkg.DataSet) {
+	if !f.IsFiltered || f.Query == "" {
+		return
+	}
+	f.FilteredIdx = nil
+	filterValue := f.Query
+	if f.Column >= 0 {
+		if idx := strings.IndexByte(f.Query, ':'); idx > 0 {
+			filterValue = f.Query[idx+1:]
+		}
+	}
+	query := strings.ToLower(filterValue)
+
+	if f.Column >= 0 {
+		for i, row := range data.Rows {
+			if f.Column < len(row) && strings.Contains(strings.ToLower(row[f.Column]), query) {
+				f.FilteredIdx = append(f.FilteredIdx, i)
+			}
+		}
+	} else {
+		for i, row := range data.Rows {
+			for _, cell := range row {
+				if strings.Contains(strings.ToLower(cell), query) {
+					f.FilteredIdx = append(f.FilteredIdx, i)
+					break
+				}
+			}
+		}
+	}
+}
+
 // RowCount returns the number of visible rows (filtered or total).
 func (f *FilterState) RowCount(totalRows int) int {
 	if !f.IsFiltered {

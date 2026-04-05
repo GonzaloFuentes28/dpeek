@@ -67,9 +67,25 @@ type CSVModel struct {
 	sort   SortState
 	undo   UndoStack[CellEdit]
 
+	// Progressive loading
+	loading     bool
+	chunkReader *csvpkg.ChunkReader
+
 	// Status message (temporary)
 	statusMsg string
 }
+
+// csvChunkMsg delivers a batch of rows from background loading.
+type csvChunkMsg struct {
+	Rows      [][]string
+	OrigIndex []int
+}
+
+// csvLoadDoneMsg signals that all rows have been loaded.
+type csvLoadDoneMsg struct{}
+
+// csvLoadErrMsg signals a loading error.
+type csvLoadErrMsg struct{ Err error }
 
 // NewCSVModel creates a new CSV table model.
 func NewCSVModel(data *csvpkg.DataSet) CSVModel {
@@ -77,8 +93,8 @@ func NewCSVModel(data *csvpkg.DataSet) CSVModel {
 	ti.CharLimit = 256
 
 	gi := textinput.New()
-	gi.Placeholder = "Line number..."
-	gi.CharLimit = 10
+	gi.Placeholder = "Row, col name, or row:col..."
+	gi.CharLimit = 64
 
 	m := CSVModel{
 		data:      data,
@@ -90,6 +106,77 @@ func NewCSVModel(data *csvpkg.DataSet) CSVModel {
 	}
 	m.computeColWidths()
 	return m
+}
+
+// NewCSVModelChunked creates a CSV model with progressive loading.
+func NewCSVModelChunked(data *csvpkg.DataSet, cr *csvpkg.ChunkReader) CSVModel {
+	ti := textinput.New()
+	ti.CharLimit = 256
+
+	gi := textinput.New()
+	gi.Placeholder = "Row, col name, or row:col..."
+	gi.CharLimit = 64
+
+	m := CSVModel{
+		data:        data,
+		editInput:   ti,
+		gotoInput:   gi,
+		search:      NewSearchState(),
+		filter:      NewFilterState(),
+		undo:        NewUndoStack[CellEdit](1000),
+		loading:     true,
+		chunkReader: cr,
+	}
+	m.computeColWidthsSampled(csvpkg.ColWidthSampleSize)
+	return m
+}
+
+// Init returns a command to continue background loading if needed.
+func (m CSVModel) Init() tea.Cmd {
+	if !m.loading || m.chunkReader == nil {
+		return nil
+	}
+	return m.readNextChunkCmd()
+}
+
+func (m CSVModel) readNextChunkCmd() tea.Cmd {
+	cr := m.chunkReader
+	return func() tea.Msg {
+		rows, origIdx, err := cr.ReadNextChunk(csvpkg.DefaultChunkSize)
+		if err != nil {
+			return csvLoadErrMsg{Err: err}
+		}
+		if len(rows) == 0 {
+			return csvLoadDoneMsg{}
+		}
+		return csvChunkMsg{Rows: rows, OrigIndex: origIdx}
+	}
+}
+
+func (m *CSVModel) computeColWidthsSampled(sampleSize int) {
+	if m.data.ColCount() == 0 {
+		return
+	}
+	m.colWidths = make([]int, m.data.ColCount())
+	limit := sampleSize
+	if limit > m.data.RowCount() {
+		limit = m.data.RowCount()
+	}
+	for col := range m.data.ColCount() {
+		w := len(m.data.Headers[col])
+		for row := range limit {
+			if col < len(m.data.Rows[row]) {
+				if cellLen := len(m.data.Rows[row][col]); cellLen > w {
+					w = cellLen
+				}
+			}
+		}
+		w += colPadding * 2
+		if w < minColWidth {
+			w = minColWidth
+		}
+		m.colWidths[col] = w
+	}
 }
 
 func (m *CSVModel) computeColWidths() {
@@ -143,11 +230,6 @@ func (m *CSVModel) dataRow(visibleRow int) int {
 	return m.filter.MapRow(visibleRow)
 }
 
-// Init implements tea.Model.
-func (m CSVModel) Init() tea.Cmd {
-	return nil
-}
-
 // Update implements tea.Model.
 func (m CSVModel) Update(msg tea.Msg) (CSVModel, tea.Cmd) {
 	// Route to active input handler
@@ -193,6 +275,41 @@ func (m CSVModel) Update(msg tea.Msg) (CSVModel, tea.Cmd) {
 				m.ensureRowVisible()
 			}
 		}
+
+	case csvChunkMsg:
+		m.data.Rows = append(m.data.Rows, msg.Rows...)
+		m.data.OrigIndex = append(m.data.OrigIndex, msg.OrigIndex...)
+		// Incrementally apply filter to new rows if active
+		if m.filter.IsFiltered {
+			m.filter.ApplyChunk(m.data, len(m.data.Rows)-len(msg.Rows), len(msg.Rows))
+		}
+		return m, m.readNextChunkCmd()
+
+	case csvLoadDoneMsg:
+		m.loading = false
+		if m.chunkReader != nil {
+			m.chunkReader.Close()
+			m.chunkReader = nil
+		}
+		m.computeColWidths()
+		// Re-apply sort if it was requested during loading
+		if m.sort.Active {
+			m.sort.Apply(m.data)
+			if m.filter.IsFiltered {
+				m.filter.Reapply(m.data)
+			}
+		}
+		m.statusMsg = fmt.Sprintf("Loaded %d rows", m.data.RowCount())
+		return m, nil
+
+	case csvLoadErrMsg:
+		m.loading = false
+		if m.chunkReader != nil {
+			m.chunkReader.Close()
+			m.chunkReader = nil
+		}
+		m.statusMsg = fmt.Sprintf("Load error: %v", msg.Err)
+		return m, nil
 
 	case tea.KeyMsg:
 		// Close overlays first
@@ -552,27 +669,58 @@ func (m CSVModel) updateGoto(msg tea.Msg) (CSVModel, tea.Cmd) {
 		case "enter":
 			m.gotoActive = false
 			m.gotoInput.Blur()
-			lineStr := strings.TrimSpace(m.gotoInput.Value())
-			if lineStr == "" {
+			input := strings.TrimSpace(m.gotoInput.Value())
+			if input == "" {
 				return m, nil
 			}
-			line, err := strconv.Atoi(lineStr)
-			if err != nil {
-				m.statusMsg = "Invalid line number"
-				return m, nil
+
+			if idx := strings.IndexByte(input, ':'); idx >= 0 {
+				// row:col syntax
+				rowPart := input[:idx]
+				colPart := input[idx+1:]
+				if rowPart != "" {
+					if rowNum, err := strconv.Atoi(rowPart); err == nil {
+						target := rowNum - 1
+						if target < 0 {
+							target = 0
+						}
+						if target >= m.rowCount() {
+							target = m.rowCount() - 1
+						}
+						m.cursorRow = target
+					}
+				}
+				if colPart != "" {
+					colIdx := parseColRef(colPart, m.data.Headers)
+					if colIdx >= 0 {
+						m.cursorCol = colIdx
+					} else {
+						m.statusMsg = "Unknown column: " + colPart
+					}
+				}
+			} else if num, err := strconv.Atoi(input); err == nil {
+				// Plain number — jump to row
+				target := num - 1
+				if target < 0 {
+					target = 0
+				}
+				if target >= m.rowCount() {
+					target = m.rowCount() - 1
+				}
+				m.cursorRow = target
+			} else {
+				// Try as column name
+				colIdx := parseColRef(input, m.data.Headers)
+				if colIdx >= 0 {
+					m.cursorCol = colIdx
+				} else {
+					m.statusMsg = "Invalid input"
+					return m, nil
+				}
 			}
-			// Convert 1-based to 0-based
-			target := line - 1
-			if target < 0 {
-				target = 0
-			}
-			if target >= m.rowCount() {
-				target = m.rowCount() - 1
-			}
-			m.cursorRow = target
-			m.cursorCol = 0
 			m.ensureRowVisible()
-			m.statusMsg = fmt.Sprintf("Jumped to line %d", target+1)
+			m.ensureColVisible()
+			m.statusMsg = fmt.Sprintf("Jumped to row %d, col %d", m.cursorRow+1, m.cursorCol+1)
 			return m, nil
 		}
 	}
@@ -619,14 +767,21 @@ func (m CSVModel) View() string {
 
 	var b strings.Builder
 
+	colStart, colEnd := m.visibleColRange()
+
 	// Title line
 	title := style.TitleStyle.Render(m.data.FilePath)
 	pos := style.DimStyle.Render(fmt.Sprintf("  Row %d/%d  Col %d/%d",
 		m.cursorRow+1, m.rowCount(),
 		m.cursorCol+1, m.data.ColCount()))
-	b.WriteString(title + pos + "\n")
-
-	colStart, colEnd := m.visibleColRange()
+	var colOverflow string
+	if colStart > 0 {
+		colOverflow += fmt.Sprintf("  ◀ %d cols", colStart)
+	}
+	if colEnd < m.data.ColCount() {
+		colOverflow += fmt.Sprintf("  %d cols ▶", m.data.ColCount()-colEnd)
+	}
+	b.WriteString(title + pos + style.DimStyle.Render(colOverflow) + "\n")
 
 	// Header
 	b.WriteString(m.renderRow(-1, colStart, colEnd))
@@ -672,8 +827,12 @@ func (m CSVModel) buildStatusItems() []string {
 		pct = (m.cursorRow + 1) * 100 / m.rowCount()
 	}
 
+	rowLabel := fmt.Sprintf("%d rows", m.data.RowCount())
+	if m.loading {
+		rowLabel = fmt.Sprintf("Loading... %dk rows", m.data.RowCount()/1000)
+	}
 	items := []string{
-		fmt.Sprintf("%d rows", m.data.RowCount()),
+		rowLabel,
 		fmt.Sprintf("%d cols", m.data.ColCount()),
 		fmt.Sprintf("%d%%", pct),
 	}
@@ -761,12 +920,8 @@ func (m CSVModel) renderRow(row int, colStart, colEnd int) string {
 // renderDataRow renders a data row with proper styling (cursor, search highlight).
 func (m CSVModel) renderDataRow(dataRow, visibleRow, colStart, colEnd int) string {
 	var parts []string
-	// Show original file line number
-	lineNum := dataRow + 1
-	if dataRow < len(m.data.OrigIndex) {
-		lineNum = m.data.OrigIndex[dataRow]
-	}
-	parts = append(parts, style.RowNumberStyle.Render(padLeft(fmt.Sprintf("%d", lineNum), rowNumWidth)))
+	// Show sequential row number (1-based, matches visible position)
+	parts = append(parts, style.RowNumberStyle.Render(padLeft(fmt.Sprintf("%d", visibleRow+1), rowNumWidth)))
 
 	for col := colStart; col < colEnd; col++ {
 		var value string
@@ -827,6 +982,18 @@ func (m CSVModel) HasActiveInput() bool {
 // HasDismissableState returns true if Esc has something to close/clear.
 func (m CSVModel) HasDismissableState() bool {
 	return m.HasActiveInput() || m.search.Query != "" || m.filter.IsFiltered
+}
+
+// parseColRef tries to resolve a column reference as 1-based number or header name.
+func parseColRef(s string, headers []string) int {
+	if num, err := strconv.Atoi(s); err == nil {
+		idx := num - 1
+		if idx >= 0 && idx < len(headers) {
+			return idx
+		}
+		return -1
+	}
+	return findColumn(headers, s)
 }
 
 // Helper functions

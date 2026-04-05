@@ -74,8 +74,23 @@ type JSONModel struct {
 	search        SearchState
 	activeOverlay overlay
 
+	// Progressive loading
+	loading     bool
+	chunkReader *jsonpkg.JSONLChunkReader
+
 	statusMsg string
 }
+
+// jsonlChunkMsg delivers a batch of nodes from background JSONL loading.
+type jsonlChunkMsg struct {
+	Nodes []*jsonpkg.Node
+}
+
+// jsonlLoadDoneMsg signals that all JSONL lines have been loaded.
+type jsonlLoadDoneMsg struct{}
+
+// jsonlLoadErrMsg signals a JSONL loading error.
+type jsonlLoadErrMsg struct{ Err error }
 
 // NewJSONModel creates a new JSON tree model.
 func NewJSONModel(root *jsonpkg.Node, filePath string, isJSONL bool) JSONModel {
@@ -97,6 +112,44 @@ func NewJSONModel(root *jsonpkg.Node, filePath string, isJSONL bool) JSONModel {
 	}
 	m.refreshVisible()
 	return m
+}
+
+// NewJSONModelChunked creates a JSON model with progressive JSONL loading.
+func NewJSONModelChunked(root *jsonpkg.Node, filePath string, cr *jsonpkg.JSONLChunkReader) JSONModel {
+	ti := textinput.New()
+	ti.CharLimit = 512
+
+	gi := textinput.New()
+	gi.Placeholder = "Node number..."
+	gi.CharLimit = 10
+
+	m := JSONModel{
+		root:        root,
+		filePath:    filePath,
+		isJSONL:     true,
+		search:      NewSearchState(),
+		editInput:   ti,
+		gotoInput:   gi,
+		undo:        NewUndoStack[NodeEdit](1000),
+		loading:     true,
+		chunkReader: cr,
+	}
+	m.refreshVisible()
+	return m
+}
+
+func (m JSONModel) readNextJSONLChunkCmd() tea.Cmd {
+	cr := m.chunkReader
+	return func() tea.Msg {
+		nodes, err := cr.ReadNextChunk(jsonpkg.DefaultJSONLChunkSize)
+		if err != nil {
+			return jsonlLoadErrMsg{Err: err}
+		}
+		if len(nodes) == 0 {
+			return jsonlLoadDoneMsg{}
+		}
+		return jsonlChunkMsg{Nodes: nodes}
+	}
 }
 
 func (m *JSONModel) refreshVisible() {
@@ -124,6 +177,9 @@ func (m JSONModel) HasDismissableState() bool {
 
 // Init implements tea.Model.
 func (m JSONModel) Init() tea.Cmd {
+	if m.loading && m.chunkReader != nil {
+		return m.readNextJSONLChunkCmd()
+	}
 	return nil
 }
 
@@ -143,6 +199,33 @@ func (m JSONModel) Update(msg tea.Msg) (JSONModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+
+	case jsonlChunkMsg:
+		for _, node := range msg.Nodes {
+			node.Parent = m.root
+			m.root.Children = append(m.root.Children, node)
+		}
+		m.refreshVisible()
+		return m, m.readNextJSONLChunkCmd()
+
+	case jsonlLoadDoneMsg:
+		m.loading = false
+		if m.chunkReader != nil {
+			m.chunkReader.Close()
+			m.chunkReader = nil
+		}
+		m.refreshVisible()
+		m.statusMsg = fmt.Sprintf("Loaded %d items", len(m.root.Children))
+		return m, nil
+
+	case jsonlLoadErrMsg:
+		m.loading = false
+		if m.chunkReader != nil {
+			m.chunkReader.Close()
+			m.chunkReader = nil
+		}
+		m.statusMsg = fmt.Sprintf("Load error: %v", msg.Err)
+		return m, nil
 
 	case tea.MouseMsg:
 		switch msg.Button {
@@ -659,8 +742,12 @@ func (m JSONModel) buildStatusItems() []string {
 		pct = (m.cursor + 1) * 100 / len(m.visible)
 	}
 
+	nodeLabel := fmt.Sprintf("%d nodes", m.countNodes(m.root))
+	if m.loading {
+		nodeLabel = fmt.Sprintf("Loading... %d items", len(m.root.Children))
+	}
 	items := []string{
-		fmt.Sprintf("%d nodes", m.countNodes(m.root)),
+		nodeLabel,
 		fmt.Sprintf("%d%%", pct),
 	}
 	if m.undo.IsModified() {
@@ -816,6 +903,7 @@ func RenderJSONHelp(width, height int) string {
 		{"F1", "Toggle this help"},
 		{"F2, Ctrl+S", "Save file"},
 		{"F3, /", "Search (prefix / for regex)"},
+		{"Ctrl+G", "Go to node number"},
 		{"y", "Copy to clipboard"},
 		{"p", "Paste from clipboard"},
 		{"Ctrl+Z", "Undo"},

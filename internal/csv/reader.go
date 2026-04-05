@@ -3,7 +3,15 @@ package csv
 import (
 	"encoding/csv"
 	"fmt"
+	"io"
 	"os"
+)
+
+const (
+	// DefaultChunkSize is the number of rows to load per chunk.
+	DefaultChunkSize = 50000
+	// ColWidthSampleSize limits how many rows are scanned for column width estimation.
+	ColWidthSampleSize = 1000
 )
 
 // DataSet holds a parsed CSV/TSV file in memory.
@@ -78,6 +86,140 @@ func Load(path string, delimiter rune, hasHeader bool) (*DataSet, error) {
 	}
 
 	return ds, nil
+}
+
+// ChunkReader holds the state needed to continue reading chunks from a CSV file.
+type ChunkReader struct {
+	Reader    *csv.Reader
+	File      *os.File
+	ColCount  int
+	HasHeader bool
+	NextIndex int // next OrigIndex to assign
+}
+
+// LoadChunk reads the header and first chunk of rows from a CSV file.
+// Returns a partial DataSet and a ChunkReader for continued reading.
+func LoadChunk(path string, delimiter rune, hasHeader bool, chunkSize int) (*DataSet, *ChunkReader, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open %s: %w", path, err)
+	}
+
+	r := csv.NewReader(f)
+	r.Comma = delimiter
+	r.LazyQuotes = true
+	r.FieldsPerRecord = -1
+
+	ds := &DataSet{
+		FilePath:  path,
+		Delimiter: delimiter,
+		HasHeader: hasHeader,
+	}
+
+	// Read first record to determine headers
+	firstRecord, err := r.Read()
+	if err != nil {
+		f.Close()
+		if err == io.EOF {
+			return ds, nil, nil
+		}
+		return nil, nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+
+	startIndex := 1 // next OrigIndex (1-based)
+	if hasHeader {
+		ds.Headers = firstRecord
+		startIndex = 2
+	} else {
+		colCount := len(firstRecord)
+		ds.Headers = make([]string, colCount)
+		for i := range colCount {
+			ds.Headers[i] = colName(i)
+		}
+		// First record is data
+		padded := normalizeRow(firstRecord, len(ds.Headers))
+		ds.Rows = append(ds.Rows, padded)
+		ds.OrigIndex = append(ds.OrigIndex, 1)
+		startIndex = 2
+	}
+
+	// Read first chunk
+	for range chunkSize {
+		record, err := r.Read()
+		if err != nil {
+			f.Close()
+			if err == io.EOF {
+				return ds, nil, nil // file fully read
+			}
+			return nil, nil, fmt.Errorf("parse %s: %w", path, err)
+		}
+		padded := normalizeRow(record, len(ds.Headers))
+		ds.Rows = append(ds.Rows, padded)
+		ds.OrigIndex = append(ds.OrigIndex, startIndex+len(ds.Rows)-1)
+	}
+
+	// Fix OrigIndex values
+	for i := range ds.Rows {
+		if hasHeader {
+			ds.OrigIndex[i] = i + 2
+		} else {
+			ds.OrigIndex[i] = i + 1
+		}
+	}
+
+	cr := &ChunkReader{
+		Reader:    r,
+		File:      f,
+		ColCount:  len(ds.Headers),
+		HasHeader: hasHeader,
+		NextIndex: len(ds.Rows),
+	}
+	return ds, cr, nil
+}
+
+// ReadNextChunk reads the next batch of rows from an open ChunkReader.
+// Returns empty slices when EOF is reached.
+func (cr *ChunkReader) ReadNextChunk(chunkSize int) ([][]string, []int, error) {
+	var rows [][]string
+	var origIndex []int
+
+	for range chunkSize {
+		record, err := cr.Reader.Read()
+		if err != nil {
+			if err == io.EOF {
+				return rows, origIndex, nil
+			}
+			return nil, nil, fmt.Errorf("read chunk: %w", err)
+		}
+		padded := normalizeRow(record, cr.ColCount)
+		rows = append(rows, padded)
+		idx := cr.NextIndex
+		if cr.HasHeader {
+			origIndex = append(origIndex, idx+2)
+		} else {
+			origIndex = append(origIndex, idx+1)
+		}
+		cr.NextIndex++
+	}
+
+	return rows, origIndex, nil
+}
+
+// Close closes the underlying file.
+func (cr *ChunkReader) Close() {
+	if cr.File != nil {
+		cr.File.Close()
+	}
+}
+
+// normalizeRow pads a row to the expected column count.
+func normalizeRow(row []string, colCount int) []string {
+	if len(row) >= colCount {
+		return row
+	}
+	padded := make([]string, colCount)
+	copy(padded, row)
+	return padded
 }
 
 // RowCount returns the number of data rows (excluding header).

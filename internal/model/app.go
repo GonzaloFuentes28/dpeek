@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -26,6 +27,26 @@ type App struct {
 func NewApp(path string, format detect.Format, delimiter rune, noHeader bool) App {
 	switch format {
 	case detect.FormatCSV, detect.FormatTSV:
+		// Use chunked loading for files larger than 5MB
+		const chunkThreshold = 5 * 1024 * 1024
+		info, _ := os.Stat(path)
+		if info != nil && info.Size() > chunkThreshold {
+			data, cr, err := csvpkg.LoadChunk(path, delimiter, !noHeader, csvpkg.DefaultChunkSize)
+			if err != nil {
+				return App{err: err}
+			}
+			if cr != nil {
+				return App{
+					mode:     format,
+					csvModel: NewCSVModelChunked(data, cr),
+				}
+			}
+			// File fully read within first chunk
+			return App{
+				mode:     format,
+				csvModel: NewCSVModel(data),
+			}
+		}
 		data, err := csvpkg.Load(path, delimiter, !noHeader)
 		if err != nil {
 			return App{err: err}
@@ -46,6 +67,24 @@ func NewApp(path string, format detect.Format, delimiter rune, noHeader bool) Ap
 		}
 
 	case detect.FormatJSONL:
+		const chunkThreshold = 5 * 1024 * 1024
+		info, _ := os.Stat(path)
+		if info != nil && info.Size() > chunkThreshold {
+			root, cr, err := jsonpkg.ParseJSONLChunk(path, jsonpkg.DefaultJSONLChunkSize)
+			if err != nil {
+				return App{err: err}
+			}
+			if cr != nil {
+				return App{
+					mode:      format,
+					jsonModel: NewJSONModelChunked(root, path, cr),
+				}
+			}
+			return App{
+				mode:      format,
+				jsonModel: NewJSONModel(root, path, true),
+			}
+		}
 		root, err := jsonpkg.ParseJSONL(path)
 		if err != nil {
 			return App{err: err}
@@ -62,6 +101,12 @@ func NewApp(path string, format detect.Format, delimiter rune, noHeader bool) Ap
 
 // Init implements tea.Model.
 func (a App) Init() tea.Cmd {
+	switch a.mode {
+	case detect.FormatCSV, detect.FormatTSV:
+		return a.csvModel.Init()
+	case detect.FormatJSON, detect.FormatJSONL:
+		return a.jsonModel.Init()
+	}
 	return nil
 }
 

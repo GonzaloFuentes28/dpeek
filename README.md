@@ -97,7 +97,7 @@ dpeek --version                 # Show version
 | `↑↓←→` / `hjkl` | Navigate cells or nodes |
 | `PgUp` / `PgDn` | Scroll one page up or down |
 | `Home` / `End` | Jump to first or last cell/node |
-| `Ctrl+G` | Go to line/node number |
+| `Ctrl+G` | Go to row / column name / row:col |
 
 ### Editing
 

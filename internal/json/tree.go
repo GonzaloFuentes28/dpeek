@@ -397,6 +397,105 @@ func ParseJSONL(path string) (*Node, error) {
 	return root, nil
 }
 
+const (
+	// DefaultJSONLChunkSize is the number of lines to load per chunk.
+	DefaultJSONLChunkSize = 10000
+)
+
+// JSONLChunkReader holds the state for progressive JSONL loading.
+type JSONLChunkReader struct {
+	Scanner   *bufio.Scanner
+	File      *os.File
+	Root      *Node
+	NextIndex int
+}
+
+// ParseJSONLChunk reads the first chunk of lines from a JSONL file.
+// Returns the root node and a chunk reader for continued loading, or nil if fully read.
+func ParseJSONLChunk(path string, chunkSize int) (*Node, *JSONLChunkReader, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open %s: %w", path, err)
+	}
+
+	root := &Node{
+		Kind:     KindArray,
+		Expanded: true,
+		Depth:    0,
+		Index:    -1,
+	}
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+
+	idx := 0
+	for idx < chunkSize && scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var raw interface{}
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			f.Close()
+			return nil, nil, fmt.Errorf("parse line %d: %w", idx+1, err)
+		}
+		child := buildNode("", raw, 1, root, idx)
+		root.Children = append(root.Children, child)
+		idx++
+	}
+
+	if err := scanner.Err(); err != nil {
+		f.Close()
+		return nil, nil, fmt.Errorf("scan %s: %w", path, err)
+	}
+
+	// Check if there's more data
+	if idx < chunkSize {
+		f.Close()
+		return root, nil, nil // fully read
+	}
+
+	cr := &JSONLChunkReader{
+		Scanner:   scanner,
+		File:      f,
+		Root:      root,
+		NextIndex: idx,
+	}
+	return root, cr, nil
+}
+
+// ReadNextChunk reads the next batch of JSONL lines.
+// Returns the new nodes (not yet appended to root). Empty slice on EOF.
+func (cr *JSONLChunkReader) ReadNextChunk(chunkSize int) ([]*Node, error) {
+	var nodes []*Node
+	count := 0
+	for count < chunkSize && cr.Scanner.Scan() {
+		line := strings.TrimSpace(cr.Scanner.Text())
+		if line == "" {
+			continue
+		}
+		var raw interface{}
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			return nil, fmt.Errorf("parse line %d: %w", cr.NextIndex+1, err)
+		}
+		child := buildNode("", raw, 1, cr.Root, cr.NextIndex)
+		nodes = append(nodes, child)
+		cr.NextIndex++
+		count++
+	}
+	if err := cr.Scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan: %w", err)
+	}
+	return nodes, nil
+}
+
+// Close closes the underlying file.
+func (cr *JSONLChunkReader) Close() {
+	if cr.File != nil {
+		cr.File.Close()
+	}
+}
+
 func buildNode(key string, val interface{}, depth int, parent *Node, index int) *Node {
 	n := &Node{
 		Key:    key,
