@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -23,6 +24,20 @@ type ColumnStats struct {
 	MaxVal      string
 	Mean        float64
 	HasNumeric  bool
+	NumericVals []float64          // raw numeric values for histogram
+	FreqMap     map[string]int     // value frequencies for bar chart
+}
+
+// histBucket represents one bar in a histogram.
+type histBucket struct {
+	Label string
+	Count int
+}
+
+// freqEntry represents a value and its count for frequency charts.
+type freqEntry struct {
+	Value string
+	Count int
 }
 
 // ComputeStats calculates statistics for a column.
@@ -38,6 +53,7 @@ func ComputeStats(data *csvpkg.DataSet, col int) ColumnStats {
 	}
 
 	unique := make(map[string]struct{})
+	freqMap := make(map[string]int)
 	var numericVals []float64
 	intCount, floatCount, boolCount, emptyCount := 0, 0, 0, 0
 
@@ -48,6 +64,7 @@ func ComputeStats(data *csvpkg.DataSet, col int) ColumnStats {
 			continue
 		}
 		unique[val] = struct{}{}
+		freqMap[val]++
 
 		lower := strings.ToLower(val)
 		if lower == "true" || lower == "false" {
@@ -88,9 +105,12 @@ func ComputeStats(data *csvpkg.DataSet, col int) ColumnStats {
 		stats.InferType = "string"
 	}
 
+	stats.FreqMap = freqMap
+
 	// Numeric stats
 	if len(numericVals) > 0 {
 		stats.HasNumeric = true
+		stats.NumericVals = numericVals
 		minV, maxV := numericVals[0], numericVals[0]
 		sum := 0.0
 		for _, v := range numericVals {
@@ -166,6 +186,17 @@ func RenderStats(cs ColumnStats, width, height int) string {
 		lines = append(lines, labelStyle.Render("Mean")+valueStyle.Render(fmt.Sprintf("%.2f", cs.Mean)))
 	}
 
+	// Chart
+	if cs.HasNumeric && len(cs.NumericVals) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, titleStyle.Render("Distribution"))
+		lines = append(lines, renderHistogram(cs.NumericVals, cs.InferType == "integer")...)
+	} else if len(cs.FreqMap) > 0 && !cs.HasNumeric {
+		lines = append(lines, "")
+		lines = append(lines, titleStyle.Render("Top Values"))
+		lines = append(lines, renderFreqChart(cs.FreqMap)...)
+	}
+
 	lines = append(lines, "")
 	lines = append(lines, style.DimStyle.Render("Press F6 or Esc to close"))
 
@@ -191,4 +222,134 @@ func RenderStats(cs ColumnStats, width, height int) string {
 	}
 
 	return padTop + strings.Join(centeredLines, "\n")
+}
+
+const (
+	chartWidth   = 30
+	histBuckets  = 8
+	freqMaxItems = 10
+)
+
+var barChars = []rune{'░', '▓'}
+
+func renderHistogram(vals []float64, isInt bool) []string {
+	if len(vals) == 0 {
+		return nil
+	}
+
+	minV, maxV := vals[0], vals[0]
+	for _, v := range vals {
+		if v < minV {
+			minV = v
+		}
+		if v > maxV {
+			maxV = v
+		}
+	}
+
+	numBuckets := histBuckets
+	if maxV == minV {
+		numBuckets = 1
+	}
+
+	bucketSize := (maxV - minV) / float64(numBuckets)
+	if bucketSize == 0 {
+		bucketSize = 1
+	}
+
+	counts := make([]int, numBuckets)
+	for _, v := range vals {
+		idx := int((v - minV) / bucketSize)
+		if idx >= numBuckets {
+			idx = numBuckets - 1
+		}
+		counts[idx]++
+	}
+
+	maxCount := 0
+	for _, c := range counts {
+		if c > maxCount {
+			maxCount = c
+		}
+	}
+
+	labelStyle := lipgloss.NewStyle().Foreground(style.ColorDim).Width(14).Align(lipgloss.Right)
+	barStyle := lipgloss.NewStyle().Foreground(style.ColorHeader)
+	countStyle := lipgloss.NewStyle().Foreground(style.ColorNormal)
+
+	var lines []string
+	for i, c := range counts {
+		lo := minV + float64(i)*bucketSize
+		hi := lo + bucketSize
+		var label string
+		if isInt {
+			label = fmt.Sprintf("%d-%d", int64(lo), int64(hi))
+		} else {
+			label = fmt.Sprintf("%.1f-%.1f", lo, hi)
+		}
+
+		barLen := 0
+		if maxCount > 0 {
+			barLen = c * chartWidth / maxCount
+		}
+		if c > 0 && barLen == 0 {
+			barLen = 1
+		}
+		bar := strings.Repeat("▓", barLen) + strings.Repeat("░", chartWidth-barLen)
+		lines = append(lines, labelStyle.Render(label)+" "+barStyle.Render(bar)+" "+countStyle.Render(fmt.Sprintf("%d", c)))
+	}
+	return lines
+}
+
+func renderFreqChart(freqMap map[string]int) []string {
+	entries := make([]freqEntry, 0, len(freqMap))
+	for v, c := range freqMap {
+		entries = append(entries, freqEntry{Value: v, Count: c})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Count > entries[j].Count
+	})
+
+	limit := freqMaxItems
+	if len(entries) < limit {
+		limit = len(entries)
+	}
+	entries = entries[:limit]
+
+	maxCount := 0
+	maxLabelLen := 0
+	for _, e := range entries {
+		if e.Count > maxCount {
+			maxCount = e.Count
+		}
+		if len(e.Value) > maxLabelLen {
+			maxLabelLen = len(e.Value)
+		}
+	}
+	if maxLabelLen > 16 {
+		maxLabelLen = 16
+	}
+
+	labelStyle := lipgloss.NewStyle().Foreground(style.ColorDim).Width(maxLabelLen + 2).Align(lipgloss.Right)
+	barStyle := lipgloss.NewStyle().Foreground(style.ColorHeader)
+	countStyle := lipgloss.NewStyle().Foreground(style.ColorNormal)
+
+	var lines []string
+	for _, e := range entries {
+		label := e.Value
+		if len(label) > 16 {
+			label = label[:15] + "…"
+		}
+
+		barLen := 0
+		if maxCount > 0 {
+			barLen = e.Count * chartWidth / maxCount
+		}
+		if e.Count > 0 && barLen == 0 {
+			barLen = 1
+		}
+		bar := strings.Repeat("▓", barLen) + strings.Repeat("░", chartWidth-barLen)
+		lines = append(lines, labelStyle.Render(label)+" "+barStyle.Render(bar)+" "+countStyle.Render(fmt.Sprintf("%d", e.Count)))
+	}
+	return lines
 }
