@@ -28,7 +28,7 @@ archives:
 nfpms:
   - package_name: dpeek
     homepage: "https://github.com/GonzaloFuentes28/dpeek"
-    maintainer: "Gonzalo Fuentes <gonzalofuentes28@gmail.com>"
+    maintainer: "Gonzalo Fuentes <gonzalofuentessansalvador@gmail.com>"
     description: "Interactive terminal data viewer for CSV, TSV, JSON, and JSONL files"
     license: "MIT"
     formats:
