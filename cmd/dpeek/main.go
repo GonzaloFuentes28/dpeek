@@ -160,7 +160,8 @@ func main() {
 	}
 
 	// Create app
-	app := model.NewApp(path, format, delim, *noHeader)
+	isTempFile := stdinTmp != "" || remoteTmp != ""
+	app := model.NewApp(path, format, delim, *noHeader, isTempFile)
 
 	// Run TUI
 	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())

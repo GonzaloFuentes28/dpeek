@@ -24,7 +24,7 @@ type App struct {
 }
 
 // NewApp creates a new App model by loading the file and detecting its format.
-func NewApp(path string, format detect.Format, delimiter rune, noHeader bool) App {
+func NewApp(path string, format detect.Format, delimiter rune, noHeader bool, isTempFile bool) App {
 	switch format {
 	case detect.FormatCSV, detect.FormatTSV:
 		// Use chunked loading for files larger than 5MB
@@ -36,24 +36,30 @@ func NewApp(path string, format detect.Format, delimiter rune, noHeader bool) Ap
 				return App{err: err}
 			}
 			if cr != nil {
+				cm := NewCSVModelChunked(data, cr)
+				cm.isTempFile = isTempFile
 				return App{
 					mode:     format,
-					csvModel: NewCSVModelChunked(data, cr),
+					csvModel: cm,
 				}
 			}
 			// File fully read within first chunk
+			cm := NewCSVModel(data)
+			cm.isTempFile = isTempFile
 			return App{
 				mode:     format,
-				csvModel: NewCSVModel(data),
+				csvModel: cm,
 			}
 		}
 		data, err := csvpkg.Load(path, delimiter, !noHeader)
 		if err != nil {
 			return App{err: err}
 		}
+		cm := NewCSVModel(data)
+		cm.isTempFile = isTempFile
 		return App{
 			mode:     format,
-			csvModel: NewCSVModel(data),
+			csvModel: cm,
 		}
 
 	case detect.FormatJSON:
@@ -61,9 +67,11 @@ func NewApp(path string, format detect.Format, delimiter rune, noHeader bool) Ap
 		if err != nil {
 			return App{err: err}
 		}
+		jm := NewJSONModel(root, path, false)
+		jm.isTempFile = isTempFile
 		return App{
 			mode:      format,
-			jsonModel: NewJSONModel(root, path, false),
+			jsonModel: jm,
 		}
 
 	case detect.FormatJSONL:
@@ -75,20 +83,26 @@ func NewApp(path string, format detect.Format, delimiter rune, noHeader bool) Ap
 				return App{err: err}
 			}
 			if cr != nil {
+				jm := NewJSONModelChunked(root, path, cr)
+				jm.isTempFile = isTempFile
 				return App{
 					mode:      format,
-					jsonModel: NewJSONModelChunked(root, path, cr),
+					jsonModel: jm,
 				}
 			}
+			jm := NewJSONModel(root, path, true)
+			jm.isTempFile = isTempFile
 			return App{
 				mode:      format,
-				jsonModel: NewJSONModel(root, path, true),
+				jsonModel: jm,
 			}
 		}
 		root, err := jsonpkg.ParseJSONL(path)
 		if err != nil {
 			return App{err: err}
 		}
+		jm := NewJSONModel(root, path, true)
+		jm.isTempFile = isTempFile
 		return App{
 			mode:      format,
 			jsonModel: NewJSONModel(root, path, true),
@@ -139,7 +153,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if a.isModified() {
 				a.quitPending = true
-				a.setStatus(style.ModifiedStyle.Render("Unsaved changes! Press q again to quit, any other key to cancel"))
+				a.setStatus(style.ErrorStatusStyle.Render("Unsaved changes! Press q again to quit, any other key to cancel"))
 				return a, nil
 			}
 			return a, tea.Quit
@@ -149,7 +163,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if a.isModified() {
 				a.quitPending = true
-				a.setStatus(style.ModifiedStyle.Render("Unsaved changes! Press Esc again to quit, any other key to cancel"))
+				a.setStatus(style.ErrorStatusStyle.Render("Unsaved changes! Press Esc again to quit, any other key to cancel"))
 				return a, nil
 			}
 			return a, tea.Quit

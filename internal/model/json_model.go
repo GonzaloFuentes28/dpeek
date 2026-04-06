@@ -74,6 +74,11 @@ type JSONModel struct {
 	search        SearchState
 	activeOverlay overlay
 
+	// Save As mode (for stdin/URL sources)
+	saveAsActive bool
+	saveAsInput  textinput.Model
+	isTempFile   bool
+
 	// Progressive loading
 	loading     bool
 	chunkReader *jsonpkg.JSONLChunkReader
@@ -101,14 +106,19 @@ func NewJSONModel(root *jsonpkg.Node, filePath string, isJSONL bool) JSONModel {
 	gi.Placeholder = "Node number..."
 	gi.CharLimit = 10
 
+	sai := textinput.New()
+	sai.Placeholder = "Save as path..."
+	sai.CharLimit = 512
+
 	m := JSONModel{
-		root:      root,
-		filePath:  filePath,
-		isJSONL:   isJSONL,
-		search:    NewSearchState(),
-		editInput: ti,
-		gotoInput: gi,
-		undo:      NewUndoStack[NodeEdit](1000),
+		root:        root,
+		filePath:    filePath,
+		isJSONL:     isJSONL,
+		search:      NewSearchState(),
+		editInput:   ti,
+		gotoInput:   gi,
+		saveAsInput: sai,
+		undo:        NewUndoStack[NodeEdit](1000),
 	}
 	m.refreshVisible()
 	return m
@@ -167,7 +177,7 @@ func (m *JSONModel) viewRows() int {
 
 // HasActiveInput returns true if an input or overlay is active.
 func (m JSONModel) HasActiveInput() bool {
-	return m.editing || m.search.Active || m.gotoActive || m.activeOverlay != overlayNone
+	return m.editing || m.search.Active || m.saveAsActive || m.gotoActive || m.activeOverlay != overlayNone
 }
 
 // HasDismissableState returns true if Esc has something to close/clear.
@@ -190,6 +200,9 @@ func (m JSONModel) Update(msg tea.Msg) (JSONModel, tea.Cmd) {
 	}
 	if m.search.Active {
 		return m.updateSearch(msg)
+	}
+	if m.saveAsActive {
+		return m.updateSaveAs(msg)
 	}
 	if m.gotoActive {
 		return m.updateGoto(msg)
@@ -315,7 +328,13 @@ func (m JSONModel) Update(msg tea.Msg) (JSONModel, tea.Cmd) {
 
 		// Save
 		case "f2", "ctrl+s":
-			if m.undo.IsModified() {
+			if !m.undo.IsModified() {
+				m.statusMsg = "No changes to save"
+			} else if m.isTempFile {
+				m.saveAsActive = true
+				m.saveAsInput.SetValue("")
+				m.saveAsInput.Focus()
+			} else {
 				var err error
 				if m.isJSONL {
 					err = jsonpkg.SaveJSONL(m.root, m.filePath)
@@ -328,8 +347,6 @@ func (m JSONModel) Update(msg tea.Msg) (JSONModel, tea.Cmd) {
 					m.undo.MarkSaved()
 					m.statusMsg = "Saved!"
 				}
-			} else {
-				m.statusMsg = "No changes to save"
 			}
 		case "right", "l":
 			if m.cursor < len(m.visible) {
@@ -629,6 +646,45 @@ func (m *JSONModel) prevSearchMatch() {
 	m.ensureVisible()
 }
 
+func (m JSONModel) updateSaveAs(msg tea.Msg) (JSONModel, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			m.saveAsActive = false
+			m.saveAsInput.Blur()
+			return m, nil
+		case "enter":
+			m.saveAsActive = false
+			m.saveAsInput.Blur()
+			savePath := strings.TrimSpace(m.saveAsInput.Value())
+			if savePath == "" {
+				m.statusMsg = "Save cancelled"
+				return m, nil
+			}
+			var err error
+			if m.isJSONL {
+				err = jsonpkg.SaveJSONL(m.root, savePath)
+			} else {
+				err = jsonpkg.Save(m.root, savePath)
+			}
+			if err != nil {
+				m.statusMsg = fmt.Sprintf("Error: %v", err)
+				return m, nil
+			}
+			m.filePath = savePath
+			m.isTempFile = false
+			m.undo.MarkSaved()
+			m.statusMsg = fmt.Sprintf("Saved to %s", savePath)
+			return m, nil
+		}
+	}
+
+	var cmd tea.Cmd
+	m.saveAsInput, cmd = m.saveAsInput.Update(msg)
+	return m, cmd
+}
+
 func (m JSONModel) updateGoto(msg tea.Msg) (JSONModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -702,7 +758,11 @@ func (m JSONModel) View() string {
 	var b strings.Builder
 
 	// Title
-	title := style.TitleStyle.Render(m.filePath)
+	displayPath := m.filePath
+	if m.isTempFile && strings.Contains(displayPath, "dpeek-") {
+		displayPath = "(unsaved)"
+	}
+	title := style.TitleStyle.Render(displayPath)
 	totalNodes := m.countNodes(m.root)
 	pos := style.DimStyle.Render(fmt.Sprintf("  %d/%d nodes  %d visible",
 		m.cursor+1, totalNodes, len(m.visible)))
@@ -767,6 +827,9 @@ func (m JSONModel) buildStatusItems() []string {
 	}
 	if m.search.Active {
 		items = append(items, "SEARCH: "+m.search.Input.View())
+	}
+	if m.saveAsActive {
+		items = append(items, "SAVE AS: "+m.saveAsInput.View())
 	}
 	if m.gotoActive {
 		items = append(items, "GO TO: "+m.gotoInput.View())

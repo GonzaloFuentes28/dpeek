@@ -77,6 +77,11 @@ type CSVModel struct {
 	sqlResult   *csvpkg.DataSet // non-nil when showing query results
 	origData    *csvpkg.DataSet // original data while showing SQL results
 
+	// Save As mode (for stdin/URL sources)
+	saveAsActive bool
+	saveAsInput  textinput.Model
+	isTempFile   bool // true when source is stdin or URL
+
 	// Progressive loading
 	loading     bool
 	chunkReader *csvpkg.ChunkReader
@@ -114,12 +119,17 @@ func NewCSVModel(data *csvpkg.DataSet) CSVModel {
 	si.Placeholder = "SELECT * FROM data WHERE ..."
 	si.CharLimit = 1024
 
+	sai := textinput.New()
+	sai.Placeholder = "Save as path..."
+	sai.CharLimit = 512
+
 	m := CSVModel{
 		data:         data,
 		editInput:    ti,
 		gotoInput:    gi,
 		replaceInput: ri,
 		sqlInput:     si,
+		saveAsInput:  sai,
 		search:       NewSearchState(),
 		filter:       NewFilterState(),
 		undo:         NewUndoStack[CellEdit](1000),
@@ -145,12 +155,17 @@ func NewCSVModelChunked(data *csvpkg.DataSet, cr *csvpkg.ChunkReader) CSVModel {
 	si.Placeholder = "SELECT * FROM data WHERE ..."
 	si.CharLimit = 1024
 
+	sai := textinput.New()
+	sai.Placeholder = "Save as path..."
+	sai.CharLimit = 512
+
 	m := CSVModel{
 		data:         data,
 		editInput:    ti,
 		gotoInput:    gi,
 		replaceInput: ri,
 		sqlInput:     si,
+		saveAsInput:  sai,
 		search:       NewSearchState(),
 		filter:       NewFilterState(),
 		undo:         NewUndoStack[CellEdit](1000),
@@ -268,6 +283,9 @@ func (m CSVModel) Update(msg tea.Msg) (CSVModel, tea.Cmd) {
 	}
 	if m.search.Active {
 		return m.updateSearch(msg)
+	}
+	if m.saveAsActive {
+		return m.updateSaveAs(msg)
 	}
 	if m.replaceActive {
 		return m.updateReplace(msg)
@@ -438,15 +456,20 @@ func (m CSVModel) Update(msg tea.Msg) (CSVModel, tea.Cmd) {
 			m.activeOverlay = overlayHelp
 
 		case "f2", "ctrl+s":
-			if m.undo.IsModified() {
+			if !m.undo.IsModified() {
+				m.statusMsg = "No changes to save"
+			} else if m.isTempFile {
+				// Prompt for save path
+				m.saveAsActive = true
+				m.saveAsInput.SetValue("")
+				m.saveAsInput.Focus()
+			} else {
 				if err := m.data.Save(m.data.FilePath); err != nil {
 					m.statusMsg = fmt.Sprintf("Error: %v", err)
 				} else {
 					m.undo.MarkSaved()
 					m.statusMsg = "Saved!"
 				}
-			} else {
-				m.statusMsg = "No changes to save"
 			}
 
 		case "f3", "/":
@@ -748,6 +771,39 @@ func (m CSVModel) updateFilter(msg tea.Msg) (CSVModel, tea.Cmd) {
 	return m, cmd
 }
 
+func (m CSVModel) updateSaveAs(msg tea.Msg) (CSVModel, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			m.saveAsActive = false
+			m.saveAsInput.Blur()
+			return m, nil
+		case "enter":
+			m.saveAsActive = false
+			m.saveAsInput.Blur()
+			savePath := strings.TrimSpace(m.saveAsInput.Value())
+			if savePath == "" {
+				m.statusMsg = "Save cancelled"
+				return m, nil
+			}
+			if err := m.data.Save(savePath); err != nil {
+				m.statusMsg = fmt.Sprintf("Error: %v", err)
+				return m, nil
+			}
+			m.data.FilePath = savePath
+			m.isTempFile = false
+			m.undo.MarkSaved()
+			m.statusMsg = fmt.Sprintf("Saved to %s", savePath)
+			return m, nil
+		}
+	}
+
+	var cmd tea.Cmd
+	m.saveAsInput, cmd = m.saveAsInput.Update(msg)
+	return m, cmd
+}
+
 func (m CSVModel) updateSQL(msg tea.Msg) (CSVModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -1009,7 +1065,11 @@ func (m CSVModel) View() string {
 	colStart, colEnd := m.visibleColRange()
 
 	// Title line
-	title := style.TitleStyle.Render(m.data.FilePath)
+	displayPath := m.data.FilePath
+	if m.isTempFile && strings.Contains(displayPath, "dpeek-") {
+		displayPath = "(unsaved)"
+	}
+	title := style.TitleStyle.Render(displayPath)
 	pos := style.DimStyle.Render(fmt.Sprintf("  Row %d/%d  Col %d/%d",
 		m.cursorRow+1, m.rowCount(),
 		m.cursorCol+1, m.data.ColCount()))
@@ -1100,6 +1160,9 @@ func (m CSVModel) buildStatusItems() []string {
 	}
 	if m.filter.Active {
 		items = append(items, "FILTER: "+m.filter.Input.View())
+	}
+	if m.saveAsActive {
+		items = append(items, "SAVE AS: "+m.saveAsInput.View())
 	}
 	if m.sqlActive {
 		items = append(items, "SQL: "+m.sqlInput.View())
@@ -1224,7 +1287,7 @@ func (m CSVModel) renderSeparator(colStart, colEnd int) string {
 
 // HasActiveInput returns true if an input field or overlay is active.
 func (m CSVModel) HasActiveInput() bool {
-	return m.editing || m.search.Active || m.replaceActive || m.sqlActive || m.filter.Active || m.gotoActive || m.activeOverlay != overlayNone
+	return m.editing || m.search.Active || m.replaceActive || m.sqlActive || m.saveAsActive || m.filter.Active || m.gotoActive || m.activeOverlay != overlayNone
 }
 
 // HasDismissableState returns true if Esc has something to close/clear.

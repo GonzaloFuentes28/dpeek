@@ -50,7 +50,13 @@ var (
 
 	ModifiedStyle = lipgloss.NewStyle().
 			Foreground(ColorModified).
+			Background(ColorStatusBg).
 			Bold(true)
+
+	ErrorStatusStyle = lipgloss.NewStyle().
+				Foreground(ColorError).
+				Background(ColorStatusBg).
+				Bold(true)
 
 	TitleStyle = lipgloss.NewStyle().
 			Foreground(ColorHeader).
@@ -99,12 +105,17 @@ func RenderFKeyBar(width int, items []FKeyItem) string {
 
 // RenderStatusBar renders the status bar with the given items.
 func RenderStatusBar(width int, items ...string) string {
-	content := strings.Join(items, "  │  ")
+	sep := StatusBarStyle.Render("  │  ")
+	var rendered []string
+	for _, item := range items {
+		rendered = append(rendered, StatusBarStyle.Render(item))
+	}
+	content := strings.Join(rendered, sep)
 	contentLen := lipgloss.Width(content)
 
 	if contentLen < width {
-		content += strings.Repeat(" ", width-contentLen)
+		content += StatusBarStyle.Render(strings.Repeat(" ", width-contentLen))
 	}
 
-	return StatusBarStyle.Render(content)
+	return content
 }
