@@ -2,8 +2,11 @@
 
 Interactive terminal data viewer and editor for CSV, TSV, JSON, and JSONL files.
 
+[![CI](https://github.com/GonzaloFuentes28/dpeek/actions/workflows/ci.yml/badge.svg)](https://github.com/GonzaloFuentes28/dpeek/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/GonzaloFuentes28/dpeek)](https://github.com/GonzaloFuentes28/dpeek/releases/latest)
 ![Go 1.24+](https://img.shields.io/badge/go-1.24%2B-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Homebrew](https://img.shields.io/badge/homebrew-tap-orange)](https://github.com/GonzaloFuentes28/homebrew-tap)
 
 ## What it does
 
