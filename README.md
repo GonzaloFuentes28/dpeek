@@ -12,38 +12,24 @@ Interactive terminal data viewer and editor for CSV, TSV, JSON, and JSONL files.
 
 ## What it does
 
-`dpeek` opens data files in an interactive TUI — like htop, but for your data. Navigate, search, filter, sort, edit, and save, all from the terminal.
+`dpeek` opens data files in an interactive TUI — like htop, but for your data. Navigate, search, filter, sort, edit, query with SQL, and save — all from the terminal.
 
-**CSV/TSV mode** — scrollable table with cell editing:
-```
-┌─ data.csv ─────────────────────────────────────────────┐
-│       │ name       │ age │ city       │ salary │ active │
-│───────┼────────────┼─────┼────────────┼────────┼────────│
-│     1 │ Alice      │  32 │ Madrid     │  45000 │ true   │
-│     2 │▶Bob        │  28 │ Barcelona  │  52000 │ false  │
-│     3 │ Carol      │  45 │ Valencia   │  61000 │ true   │
-├────────────────────────────────────────────────────────-┤
-│ 20 rows  │  5 cols  │  SORT: name ▲                    │
-│ F1 Help  F2 Save  F3 Search  F4 Filter  F5 Sort  F10 Q│
-└────────────────────────────────────────────────────────-┘
-```
+## Why dpeek?
 
-**JSON mode** — collapsible tree with color-coded types:
-```
-▼ {
-    ▼ address: {
-        city: "Madrid"
-        country: "Spain"
-      ▼ coordinates: {
-            lat: 40.4168
-            lng: -3.7038
-        }
-    }
-    ▶ employees: [3 items]
-    ▶ tags: [3 items]
-    metadata: null
-  }
-```
+| | dpeek | csvlens | visidata | Miller |
+|---|---|---|---|---|
+| CSV/TSV viewer | Yes | Yes | Yes | Yes |
+| JSON/JSONL viewer | Yes | No | Yes | Yes |
+| Cell editing + save | Yes | No | Yes | No |
+| SQL queries | Yes | No | Yes | No |
+| Column statistics + charts | Yes | No | Yes | No |
+| Search & replace (regex) | Yes | No | Yes | Yes |
+| Undo/Redo | Yes | No | Yes | No |
+| Stdin piping | Yes | Yes | Yes | Yes |
+| Progressive loading | Yes | Yes | No | Yes |
+| Single binary, zero config | Yes | Yes | No | Yes |
+| Mouse support | Yes | No | Yes | No |
+| Homebrew install | Yes | Yes | Yes | Yes |
 
 ## Features
 
