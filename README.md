@@ -2,7 +2,7 @@
 
 Interactive terminal data viewer and editor for CSV, TSV, JSON, and JSONL files.
 
-![Go 1.22+](https://img.shields.io/badge/go-1.22%2B-blue)
+![Go 1.25+](https://img.shields.io/badge/go-1.25%2B-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ## What it does
@@ -75,7 +75,7 @@ cd dpeek
 make install
 ```
 
-Requires Go 1.22+.
+Requires Go 1.25+.
 
 ### From binary
 

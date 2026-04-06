@@ -28,12 +28,6 @@ type ColumnStats struct {
 	FreqMap     map[string]int     // value frequencies for bar chart
 }
 
-// histBucket represents one bar in a histogram.
-type histBucket struct {
-	Label string
-	Count int
-}
-
 // freqEntry represents a value and its count for frequency charts.
 type freqEntry struct {
 	Value string
@@ -229,8 +223,6 @@ const (
 	histBuckets  = 8
 	freqMaxItems = 10
 )
-
-var barChars = []rune{'░', '▓'}
 
 func renderHistogram(vals []float64, isInt bool) []string {
 	if len(vals) == 0 {
