@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	csvpkg "github.com/GonzaloFuentes28/dpeek/internal/csv"
+	sqlpkg "github.com/GonzaloFuentes28/dpeek/internal/sql"
 	"github.com/GonzaloFuentes28/dpeek/internal/style"
 )
 
@@ -69,6 +70,13 @@ type CSVModel struct {
 	replaceActive bool
 	replaceInput  textinput.Model
 
+	// SQL mode
+	sqlActive   bool
+	sqlInput    textinput.Model
+	sqlEngine   *sqlpkg.Engine
+	sqlResult   *csvpkg.DataSet // non-nil when showing query results
+	origData    *csvpkg.DataSet // original data while showing SQL results
+
 	// Progressive loading
 	loading     bool
 	chunkReader *csvpkg.ChunkReader
@@ -102,11 +110,16 @@ func NewCSVModel(data *csvpkg.DataSet) CSVModel {
 	ri.Placeholder = "Replace with..."
 	ri.CharLimit = 256
 
+	si := textinput.New()
+	si.Placeholder = "SELECT * FROM data WHERE ..."
+	si.CharLimit = 1024
+
 	m := CSVModel{
 		data:         data,
 		editInput:    ti,
 		gotoInput:    gi,
 		replaceInput: ri,
+		sqlInput:     si,
 		search:       NewSearchState(),
 		filter:       NewFilterState(),
 		undo:         NewUndoStack[CellEdit](1000),
@@ -128,11 +141,16 @@ func NewCSVModelChunked(data *csvpkg.DataSet, cr *csvpkg.ChunkReader) CSVModel {
 	ri.Placeholder = "Replace with..."
 	ri.CharLimit = 256
 
+	si := textinput.New()
+	si.Placeholder = "SELECT * FROM data WHERE ..."
+	si.CharLimit = 1024
+
 	m := CSVModel{
 		data:         data,
 		editInput:    ti,
 		gotoInput:    gi,
 		replaceInput: ri,
+		sqlInput:     si,
 		search:       NewSearchState(),
 		filter:       NewFilterState(),
 		undo:         NewUndoStack[CellEdit](1000),
@@ -253,6 +271,9 @@ func (m CSVModel) Update(msg tea.Msg) (CSVModel, tea.Cmd) {
 	}
 	if m.replaceActive {
 		return m.updateReplace(msg)
+	}
+	if m.sqlActive {
+		return m.updateSQL(msg)
 	}
 	if m.filter.Active {
 		return m.updateFilter(msg)
@@ -443,6 +464,11 @@ func (m CSVModel) Update(msg tea.Msg) (CSVModel, tea.Cmd) {
 				m.replaceInput.Focus()
 			}
 
+		case ":":
+			m.sqlActive = true
+			m.sqlInput.Focus()
+			m.sqlInput.CursorEnd()
+
 		case "ctrl+g":
 			m.gotoActive = true
 			m.gotoInput.SetValue("")
@@ -538,8 +564,30 @@ func (m CSVModel) Update(msg tea.Msg) (CSVModel, tea.Cmd) {
 				}
 			}
 
+		case "q":
+			if m.sqlResult != nil {
+				m.data = m.origData
+				m.sqlResult = nil
+				m.origData = nil
+				m.computeColWidths()
+				m.cursorRow = 0
+				m.cursorCol = 0
+				m.scrollRow = 0
+				m.scrollCol = 0
+				m.statusMsg = "Back to original data"
+			}
 		case "esc":
-			if m.search.Query != "" {
+			if m.sqlResult != nil {
+				m.data = m.origData
+				m.sqlResult = nil
+				m.origData = nil
+				m.computeColWidths()
+				m.cursorRow = 0
+				m.cursorCol = 0
+				m.scrollRow = 0
+				m.scrollCol = 0
+				m.statusMsg = "Back to original data"
+			} else if m.search.Query != "" {
 				m.search.Query = ""
 				m.search.Matches = nil
 			} else if m.filter.IsFiltered {
@@ -697,6 +745,75 @@ func (m CSVModel) updateFilter(msg tea.Msg) (CSVModel, tea.Cmd) {
 
 	var cmd tea.Cmd
 	m.filter.Input, cmd = m.filter.Input.Update(msg)
+	return m, cmd
+}
+
+func (m CSVModel) updateSQL(msg tea.Msg) (CSVModel, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			m.sqlActive = false
+			m.sqlInput.Blur()
+			// If showing query results, go back to original data
+			if m.sqlResult != nil {
+				m.data = m.origData
+				m.sqlResult = nil
+				m.origData = nil
+				m.computeColWidths()
+				m.cursorRow = 0
+				m.cursorCol = 0
+				m.scrollRow = 0
+				m.scrollCol = 0
+				m.statusMsg = "Back to original data"
+			}
+			return m, nil
+		case "enter":
+			m.sqlActive = false
+			m.sqlInput.Blur()
+			query := strings.TrimSpace(m.sqlInput.Value())
+			if query == "" {
+				return m, nil
+			}
+
+			// Lazy-init SQL engine from original data
+			srcData := m.data
+			if m.origData != nil {
+				srcData = m.origData
+			}
+			if m.sqlEngine == nil {
+				engine, err := sqlpkg.NewEngine(srcData)
+				if err != nil {
+					m.statusMsg = fmt.Sprintf("SQL error: %v", err)
+					return m, nil
+				}
+				m.sqlEngine = engine
+			}
+
+			result, err := m.sqlEngine.Query(query)
+			if err != nil {
+				m.statusMsg = fmt.Sprintf("SQL error: %v", err)
+				return m, nil
+			}
+
+			// Swap to result view
+			if m.origData == nil {
+				m.origData = m.data
+			}
+			m.data = result
+			m.sqlResult = result
+			m.computeColWidths()
+			m.cursorRow = 0
+			m.cursorCol = 0
+			m.scrollRow = 0
+			m.scrollCol = 0
+			m.statusMsg = fmt.Sprintf("Query returned %d rows  |  Esc/q to go back  |  : to edit query", result.RowCount())
+			return m, nil
+		}
+	}
+
+	var cmd tea.Cmd
+	m.sqlInput, cmd = m.sqlInput.Update(msg)
 	return m, cmd
 }
 
@@ -984,6 +1101,9 @@ func (m CSVModel) buildStatusItems() []string {
 	if m.filter.Active {
 		items = append(items, "FILTER: "+m.filter.Input.View())
 	}
+	if m.sqlActive {
+		items = append(items, "SQL: "+m.sqlInput.View())
+	}
 	if m.replaceActive {
 		items = append(items, fmt.Sprintf("REPLACE (%d matches): %s", m.search.MatchCount(), m.replaceInput.View()))
 	}
@@ -1017,6 +1137,7 @@ func (m CSVModel) fkeys() []style.FKeyItem {
 		style.FKeyItem{Key: "F6", Desc: "Stats"},
 		style.FKeyItem{Key: "^H", Desc: "Replace"},
 		style.FKeyItem{Key: "^G", Desc: "GoTo"},
+		style.FKeyItem{Key: ":", Desc: "SQL"},
 		style.FKeyItem{Key: "F10", Desc: "Quit"},
 	)
 	return fkeys
@@ -1103,12 +1224,12 @@ func (m CSVModel) renderSeparator(colStart, colEnd int) string {
 
 // HasActiveInput returns true if an input field or overlay is active.
 func (m CSVModel) HasActiveInput() bool {
-	return m.editing || m.search.Active || m.replaceActive || m.filter.Active || m.gotoActive || m.activeOverlay != overlayNone
+	return m.editing || m.search.Active || m.replaceActive || m.sqlActive || m.filter.Active || m.gotoActive || m.activeOverlay != overlayNone
 }
 
 // HasDismissableState returns true if Esc has something to close/clear.
 func (m CSVModel) HasDismissableState() bool {
-	return m.HasActiveInput() || m.search.Query != "" || m.filter.IsFiltered
+	return m.HasActiveInput() || m.search.Query != "" || m.filter.IsFiltered || m.sqlResult != nil
 }
 
 // parseColRef tries to resolve a column reference as 1-based number or header name.

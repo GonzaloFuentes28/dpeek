@@ -134,7 +134,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return a, tea.Quit
 		case "f10", "q":
-			if a.hasActiveInput() {
+			if a.hasActiveInput() || a.hasDismissableState() {
 				break
 			}
 			if a.isModified() {

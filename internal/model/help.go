@@ -23,6 +23,7 @@ var helpText = []struct {
 	{"F2, Ctrl+S", "Save file"},
 	{"F3, /", "Search (prefix / for regex)"},
 	{"Ctrl+H", "Search & replace"},
+	{":", "SQL query (table name: data)"},
 	{"F4", "Filter rows (col:value for column)"},
 	{"F5", "Sort by current column"},
 	{"F6", "Column statistics"},

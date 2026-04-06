@@ -47,9 +47,14 @@ Interactive terminal data viewer and editor for CSV, TSV, JSON, and JSONL files.
 - **Search** with substring or regex (`/pattern`)
 - **Filter** rows globally or by column (`col:value`)
 - **Sort** by any column with ascending/descending toggle
-- **Column statistics** — type, nulls, min/max, unique count, mean/median
+- **Column statistics** — type, nulls, min/max, unique count, mean, histograms
+- **SQL queries** — full SQLite on CSV/TSV data (`:` to open, table name: `data`)
+- **Search & replace** — Ctrl+H with regex support
 - **Undo/Redo** — full edit history with Ctrl+Z / Ctrl+Y
 - **Copy/Paste** — clipboard integration with `y` / `p`
+- **Stdin support** — `cat data.csv | dpeek` or pipe from any command
+- **Mouse support** — click to navigate, scroll wheel, horizontal scroll
+- **Progressive loading** — large files (>5MB) load in background chunks
 - **Save** modified files back to disk (F2 / Ctrl+S)
 - **Unsaved changes protection** — quit confirmation when modified
 
@@ -121,6 +126,7 @@ curl -s url | dpeek         # Pipe from any command
 | `F2` / `Ctrl+S` | Save file |
 | `F3` / `/` | Search (prefix `/` for regex, e.g. `/^foo`) |
 | `Ctrl+H` | Search & replace (uses current search query) |
+| `:` | SQL query (CSV/TSV only, table name: `data`) |
 | `F4` | Filter rows (`col:value` for column filter) |
 | `F5` | Sort by current column (CSV only) |
 | `F6` | Column statistics (CSV only) |
@@ -139,10 +145,33 @@ curl -s url | dpeek         # Pipe from any command
 
 | Format | Extensions | Features |
 |--------|-----------|----------|
-| CSV | `.csv` | View, edit, search, filter, sort, stats, save |
+| CSV | `.csv` | View, edit, search, filter, sort, stats, SQL, save |
 | TSV | `.tsv` | Same as CSV with tab delimiter |
 | JSON | `.json` | View, edit leaves, search, expand/collapse, save |
 | JSONL | `.jsonl` | Each line as array item, same features as JSON |
+
+## SQL queries (CSV/TSV)
+
+Press `:` to open the SQL prompt. The table is always named `data` with columns matching your CSV headers.
+
+```sql
+-- Filter and sort
+SELECT name, salary FROM data WHERE age > 30 ORDER BY salary DESC
+
+-- Aggregations
+SELECT city, COUNT(*), AVG(salary) FROM data GROUP BY city
+
+-- Subqueries
+SELECT * FROM data WHERE salary > (SELECT AVG(salary) FROM data)
+
+-- Window functions
+SELECT name, salary, RANK() OVER (ORDER BY salary DESC) FROM data
+
+-- String functions
+SELECT UPPER(name), LENGTH(city) FROM data WHERE city LIKE '%a%'
+```
+
+Press `Esc` or `q` to go back to the original data. Press `:` again to edit the query.
 
 ## Man page
 
