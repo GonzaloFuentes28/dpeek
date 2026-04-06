@@ -25,6 +25,19 @@ archives:
     files:
       - dpeek.1
 
+nfpms:
+  - package_name: dpeek
+    homepage: "https://github.com/GonzaloFuentes28/dpeek"
+    maintainer: "Gonzalo Fuentes <gonzalofuentes28@gmail.com>"
+    description: "Interactive terminal data viewer for CSV, TSV, JSON, and JSONL files"
+    license: "MIT"
+    formats:
+      - deb
+      - rpm
+    contents:
+      - src: dpeek.1
+        dst: /usr/share/man/man1/dpeek.1
+
 brews:
   - repository:
       owner: GonzaloFuentes28

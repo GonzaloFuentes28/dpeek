@@ -69,6 +69,28 @@ make install
 
 Requires Go 1.24+.
 
+### Debian/Ubuntu (.deb)
+
+```bash
+# Download the latest .deb from the releases page
+curl -LO https://github.com/GonzaloFuentes28/dpeek/releases/latest/download/dpeek_amd64.deb
+sudo dpkg -i dpeek_amd64.deb
+```
+
+### Fedora/RHEL (.rpm)
+
+```bash
+# Download the latest .rpm from the releases page
+curl -LO https://github.com/GonzaloFuentes28/dpeek/releases/latest/download/dpeek_amd64.rpm
+sudo rpm -i dpeek_amd64.rpm
+```
+
+### Go install
+
+```bash
+go install github.com/GonzaloFuentes28/dpeek/cmd/dpeek@latest
+```
+
 ### From binary
 
 Download the latest release from the [releases page](https://github.com/GonzaloFuentes28/dpeek/releases) and extract it to your PATH.
