@@ -44,6 +44,7 @@ Interactive terminal data viewer and editor for CSV, TSV, JSON, and JSONL files.
 - **Undo/Redo** — full edit history with Ctrl+Z / Ctrl+Y
 - **Copy/Paste** — clipboard integration with `y` / `p`
 - **Stdin support** — `cat data.csv | dpeek` or pipe from any command
+- **Remote files** — `dpeek https://example.com/data.csv` downloads and opens
 - **Mouse support** — click to navigate, scroll wheel, horizontal scroll
 - **Progressive loading** — large files (>5MB) load in background chunks
 - **Save** modified files back to disk (F2 / Ctrl+S)
@@ -84,6 +85,7 @@ dpeek data.csv --no-header      # First row as data, not header
 dpeek --version                 # Show version
 cat data.csv | dpeek        # Read from stdin
 curl -s url | dpeek         # Pipe from any command
+dpeek https://example.com/data.csv  # Open remote file
 ```
 
 ## Keyboard shortcuts

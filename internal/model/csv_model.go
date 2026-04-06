@@ -193,7 +193,7 @@ func (m *CSVModel) computeColWidthsSampled(sampleSize int) {
 		limit = m.data.RowCount()
 	}
 	for col := range m.data.ColCount() {
-		w := len(m.data.Headers[col])
+		w := len(m.data.Headers[col]) + 2 // +2 for sort indicator (e.g. " ▲")
 		for row := range limit {
 			if col < len(m.data.Rows[row]) {
 				if cellLen := len(m.data.Rows[row][col]); cellLen > w {
@@ -217,7 +217,7 @@ func (m *CSVModel) computeColWidths() {
 	m.colWidths = make([]int, m.data.ColCount())
 
 	for col := range m.data.ColCount() {
-		w := len(m.data.Headers[col])
+		w := len(m.data.Headers[col]) + 2 // +2 for sort indicator (e.g. " ▲")
 
 		for row := range m.data.RowCount() {
 			if col < len(m.data.Rows[row]) {

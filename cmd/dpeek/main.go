@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,9 +90,49 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Clean up temp file on exit
+	// Handle remote URLs
+	var remoteTmp string
+	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+		u, err := url.Parse(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: invalid URL: %v\n", err)
+			os.Exit(1)
+		}
+		ext := filepath.Ext(u.Path)
+		if ext == "" {
+			ext = ".csv" // default
+		}
+		fmt.Fprintf(os.Stderr, "Downloading %s...\n", path)
+		resp, err := http.Get(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: download failed: %v\n", err)
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			fmt.Fprintf(os.Stderr, "Error: HTTP %d\n", resp.StatusCode)
+			os.Exit(1)
+		}
+		tmp, err := os.CreateTemp("", "dpeek-*"+ext)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: could not create temp file: %v\n", err)
+			os.Exit(1)
+		}
+		if _, err := io.Copy(tmp, resp.Body); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: download failed: %v\n", err)
+			os.Exit(1)
+		}
+		tmp.Close()
+		path = tmp.Name()
+		remoteTmp = path
+	}
+
+	// Clean up temp files on exit
 	if stdinTmp != "" {
 		defer os.Remove(stdinTmp)
+	}
+	if remoteTmp != "" {
+		defer os.Remove(remoteTmp)
 	}
 
 	// Check file exists
